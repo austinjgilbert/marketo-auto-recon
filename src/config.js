@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url';
 
 export const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+/** Fallback only — model names age faster than this code. Set ANTHROPIC_MODEL in .env. */
+export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
+
 /** Parse dotenv text: CRLF-safe, strips quotes, cuts unquoted values at ` #` inline comments. */
 export function parseDotEnv(text) {
   const out = {};
@@ -68,7 +71,7 @@ export function loadConfig(cliFlags = {}) {
     },
     anthropic: {
       apiKey: process.env.ANTHROPIC_API_KEY || '',
-      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
+      model: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
       redact: process.env.MSE_LLM_REDACT === '1',
     },
     sinks: {

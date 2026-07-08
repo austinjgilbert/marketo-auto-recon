@@ -100,6 +100,27 @@ test('getLeadActivities chunks lead IDs to Marketo\'s 30-per-call cap', async ()
   assert.equal(seen.size, 75, 'every lead ID requested exactly once across chunks');
 });
 
+test('getLeadActivities honors shouldStop between lead chunks and reports completed chunks', async () => {
+  const leadIdParams = [];
+  const inner = createMockTransport();
+  const transport = async (url, opts) => {
+    if (url.includes('/rest/v1/activities.json')) {
+      leadIdParams.push(new URL(url).searchParams.get('leadIds'));
+    }
+    return inner(url, opts);
+  };
+  const completed = [];
+  let done = 0;
+  const leadIds = Array.from({ length: 75 }, (_, i) => i + 1); // 3 chunks of 30/30/15
+  await mockClient(transport).getLeadActivities(leadIds, {
+    sinceDatetime: '2026-01-01T00:00:00Z',
+    shouldStop: () => done >= 2,
+    onLeadChunkDone: (ids) => (done++, completed.push(...ids)),
+  });
+  assert.equal(leadIdParams.length, 2, 'third lead chunk never requested');
+  assert.equal(completed.length, 60, 'exactly two 30-lead chunks reported complete');
+});
+
 test('network errors and timeouts are retried', async () => {
   let attempts = 0;
   const inner = createMockTransport();

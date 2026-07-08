@@ -98,8 +98,7 @@ npm test    # node:test — client, recon, mapping, normalizer, interpreter, sna
 ```
 
 > Naming note: "Marketo Auto Recon" is the product; the CLI is `mse` (Marketo Signal Engine) —
-> same thing. This repo is the standalone home; the tool also ships inside the Wrangler
-> SDR-execution monorepo at `tools/marketo-signal-engine/`.
+> same thing. This repo is the standalone home.
 
 ## License
 

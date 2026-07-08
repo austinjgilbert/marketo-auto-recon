@@ -10,6 +10,7 @@
  *   mse snapshot --domain b.com        (account-level: uses the most active lead as focus)
  *   mse harvest [--once]             incremental signal harvesting to configured sinks
  *   mse harvest --daemon [--interval 15m]
+ *   mse harvest --replay-failed      re-send signals whose sink delivery failed
  *   mse explain                      what the engine found + recommended next actions
  *
  * Global flags: --mock (or MSE_MOCK=1) runs against the bundled fixture instance.
@@ -23,7 +24,7 @@ import { createMockTransport } from '../src/mock-transport.js';
 import { runRecon, renderInstanceMapMarkdown } from '../src/recon.js';
 import { buildSignalMap, mapCoverage } from '../src/signal-map.js';
 import { runSnapshotPipeline } from '../src/pipeline.js';
-import { harvestOnce, harvestDaemon, loadState, saveState, acquireLock } from '../src/harvester.js';
+import { harvestOnce, harvestDaemon, loadState, saveState, acquireLock, appendFailedDeliveries, replayFailedDeliveries } from '../src/harvester.js';
 import { createJsonlSink } from '../src/sinks/jsonl.js';
 import { createWebhookSink } from '../src/sinks/webhook.js';
 import { createWranglerSink } from '../src/sinks/wrangler.js';
@@ -147,9 +148,26 @@ async function cmdTestOrSnapshot(config, flags, { verbose }) {
   const signalMap = loadJson(join(outputDir, 'signal-map.json'), 'signal map');
   const now = nowFor(config);
 
+  // Domain-only snapshots: Marketo has no domain→leads filter, so resolve the
+  // account's lead IDs from harvest state (populated by `mse harvest`).
+  let seedLeadIds;
+  if (flags.domain && !flags.email) {
+    const state = loadState(outputDir);
+    seedLeadIds = state.eventCache?.[flags.domain]?.leadIds || state.patternState?.[flags.domain]?.knownLeadIds;
+    if (!seedLeadIds?.length) {
+      console.error(
+        `No harvest history for ${flags.domain} yet — \`--domain\` resolves leads from harvest state.\n` +
+          `Either run \`mse harvest --once\` first (and let it see activity from this account),\n` +
+          `or seed the account with one known address: mse snapshot --domain ${flags.domain} --email anyone@${flags.domain}`,
+      );
+      process.exit(1);
+    }
+  }
+
   const result = await runSnapshotPipeline(client, signalMap, {
     email: flags.email,
     domain: flags.domain,
+    seedLeadIds,
     lookbackDays: Number(flags.lookback || config.lookbackDays),
     now,
   });
@@ -200,6 +218,15 @@ async function cmdHarvest(config, flags) {
   const sinks = buildSinks(config);
   console.error(`Sinks: ${sinks.map((s) => s.name).join(', ')}${sinks.length === 1 ? ' (set WRANGLER_URL/WRANGLER_API_KEY or SINK_WEBHOOK_URL for more)' : ''}`);
 
+  if (flags['replay-failed']) {
+    const { replayed, remaining } = await replayFailedDeliveries(outputDir, sinks, {
+      log: (msg) => console.error(`[replay] ${msg}`),
+    });
+    console.log(`Replayed ${replayed} signal(s); ${remaining} still failing.`);
+    if (remaining) process.exit(1);
+    return;
+  }
+
   const harvestOptions = {
     initialLookbackDays: config.initialLookbackDays,
     journeyLookbackDays: config.lookbackDays,
@@ -233,9 +260,13 @@ async function cmdHarvest(config, flags) {
       ...harvestOptions,
     });
     saveState(outputDir, result.state);
+    const deadLettered = appendFailedDeliveries(outputDir, result.failedDeliveries);
     console.log(`Emitted ${result.emitted} signal(s). API calls today: ${result.apiCallsUsedToday ?? 'n/a'}/${config.dailyApiBudget}.`);
     for (const s of result.signals) console.log(`  [${s.signalType}] ${s.summary}`);
     for (const r of result.sinkResults) console.log(`  sink ${r.sink}: ${r.ok ? 'ok' : `FAILED ${r.error || r.status || ''}`}`);
+    if (deadLettered) {
+      console.error(`${deadLettered} signal(s) dead-lettered to ${join(outputDir, 'signals-failed.jsonl')} — run \`mse harvest --replay-failed\` once the sink recovers.`);
+    }
   } finally {
     lock.release();
   }
@@ -262,6 +293,16 @@ async function cmdExplain(config) {
     const state = loadState(outputDir);
     console.log(`\n## Harvest state\n`);
     console.log(`- Last run: ${state.lastRunAt || 'never'}; signals emitted (lifetime keys tracked): ${state.emittedKeys.length}; accounts watched: ${Object.keys(state.patternState || {}).length}`);
+    if (state.drift) {
+      console.log(`\n## Drift detected (${state.drift.detectedAt})\n`);
+      console.log(`The instance changed after mapping — re-run \`mse map\` and review signal-map.json to make these permanent:`);
+      for (const t of state.drift.newActivityTypes) {
+        console.log(`- New activity type [${t.id}] ${t.name}: ${t.hotAdded ? `hot-mapped to ${t.canonical} (${t.confidence})` : 'UNMAPPED — invisible until mapped'}`);
+      }
+      for (const f of state.drift.newForms) {
+        console.log(`- New form "${f.name}": ${f.hotAdded ? `intent ${f.signalType} (${f.confidence})` : `generic form_fill (${f.confidence})`}`);
+      }
+    }
   } else {
     console.log('\nNo signal map yet — run `mse map`.');
   }
@@ -270,6 +311,7 @@ async function cmdExplain(config) {
   const recs = [];
   if (!signalMap) recs.push('Run `mse map`, review signal-map.json with your marketing ops owner.');
   if (signalMap?.unmapped?.length) recs.push(`Map the ${signalMap.unmapped.length} unmapped custom activity type(s) — each may carry commercial signal (or mark them "ignore").`);
+  if (loadState(outputDir).drift) recs.push('Drift detected (see above): the instance grew new activity types/forms after mapping — re-run `mse map` and re-review signal-map.json.');
   if (instanceMap.dataQualityIssues.some((i) => i.kind === 'duplicate-looking-fields')) recs.push('Consolidate duplicate-looking lead fields before trusting field-based signals (MQL detection reads lifecycle fields).');
   recs.push('Engineering: run `mse harvest --daemon` on a box with outbound HTTPS (cron/systemd snippet in RUNBOOK.md).');
   recs.push('GTM: wire snapshots into the inbound SLA — generate `mse snapshot --email <lead>` on every contact-sales submission.');

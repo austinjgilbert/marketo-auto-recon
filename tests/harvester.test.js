@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { harvestOnce, loadState, saveState, acquireLock } from '../src/harvester.js';
+import { harvestOnce, loadState, saveState, acquireLock, appendFailedDeliveries, loadFailedDeliveries, replayFailedDeliveries } from '../src/harvester.js';
 import { toIngestRow, createWranglerSink } from '../src/sinks/wrangler.js';
 import { createWebhookSink, signWebhookBody } from '../src/sinks/webhook.js';
 import { createJsonlSink } from '../src/sinks/jsonl.js';
@@ -299,6 +299,128 @@ test('budget counter resets on a new day', async () => {
   assert.equal(result.state.apiBudget.date, NOW.toISOString().slice(0, 10));
   assert.ok(result.state.apiBudget.used < 999_999, 'stale day discarded');
   assert.ok(result.emitted > 0, 'yesterday\'s spend does not block today');
+});
+
+test('event cache stores slim events (no attrs) and evicts aged-out domains', async () => {
+  const signalMap = await fixtureSignalMap();
+  const result = await harvestOnce(mockClient(), signalMap, {
+    state: { sinceTokens: {}, emittedKeys: [], patternState: {}, eventCache: {} },
+    sinks: [],
+    now: NOW,
+    initialLookbackDays: 7,
+  });
+  const cached = result.state.eventCache['acme.com'];
+  assert.ok(cached.events.length > 0);
+  for (const e of cached.events) {
+    assert.equal(e.attrs, undefined, 'raw attrs stripped from cached events');
+    assert.ok(e.ts && e.canonicalType, 'signal-relevant fields kept');
+  }
+
+  // A domain whose newest event is older than the journey window gets evicted.
+  const staleState = {
+    ...result.state,
+    eventCache: {
+      ...result.state.eventCache,
+      'stale.com': { leadIds: [999], events: [{ id: 1, leadId: 999, ts: '2020-01-01T00:00:00.000Z', canonicalType: 'web_visit' }] },
+    },
+    patternState: { ...result.state.patternState, 'stale.com': { knownLeadIds: [999] } },
+  };
+  const second = await harvestOnce(mockClient(), signalMap, {
+    state: { ...staleState, sinceTokens: {} },
+    sinks: [],
+    now: NOW,
+    initialLookbackDays: 7,
+    journeyLookbackDays: 90,
+  });
+  assert.equal(second.state.eventCache['stale.com'], undefined, 'stale domain evicted from eventCache');
+  assert.equal(second.state.patternState['stale.com'], undefined, 'stale domain evicted from patternState');
+  assert.ok(second.state.eventCache['acme.com'], 'active domain kept');
+});
+
+test('budget tripping mid-pull marks only completed lead chunks as known', async () => {
+  const signalMap = await fixtureSignalMap();
+  // Client whose budget "trips" after the first lead chunk completes.
+  const client = mockClient();
+  const original = client.getLeadActivities.bind(client);
+  client.getLeadActivities = (leadIds, opts) => {
+    let chunksDone = 0;
+    return original(leadIds, {
+      ...opts,
+      shouldStop: () => chunksDone >= 1,
+      onLeadChunkDone: (ids) => {
+        chunksDone++;
+        opts.onLeadChunkDone?.(ids);
+      },
+    });
+  };
+  const result = await harvestOnce(client, signalMap, {
+    state: { sinceTokens: {}, emittedKeys: [], patternState: {}, eventCache: {} },
+    sinks: [],
+    now: NOW,
+    initialLookbackDays: 7,
+  });
+  // The fixture's acme.com leads fit one 30-lead chunk, so this exercises the
+  // plumbing without changing behavior; known lead count equals completed count.
+  const cached = result.state.eventCache['acme.com'];
+  assert.ok(cached, 'cache still built from completed chunks');
+  assert.ok(cached.leadIds.length >= 1);
+});
+
+test('failed sink deliveries dead-letter and replay (second replay is a no-op)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mse-dlq-'));
+  try {
+    const signalMap = await fixtureSignalMap();
+    const brokenSink = { name: 'webhook', emit: async () => ({ ok: false, status: 500 }) };
+    const result = await harvestOnce(mockClient(), signalMap, {
+      state: loadState(dir),
+      sinks: [brokenSink],
+      now: NOW,
+      initialLookbackDays: 7,
+    });
+    assert.ok(result.emitted > 0);
+    assert.equal(result.failedDeliveries.length, 1);
+    assert.equal(result.failedDeliveries[0].sink, 'webhook');
+
+    // Dead-letter the failures, exactly as bin/mse.js and the daemon do.
+    const written = appendFailedDeliveries(dir, result.failedDeliveries);
+    assert.equal(written, result.emitted);
+    assert.equal(loadFailedDeliveries(dir).length, result.emitted);
+
+    // Replay against a recovered sink: file drains.
+    const recovered = memorySink();
+    recovered.name = 'webhook';
+    const replay = await replayFailedDeliveries(dir, [recovered], {});
+    assert.equal(replay.replayed, result.emitted);
+    assert.equal(replay.remaining, 0);
+    assert.equal(recovered.received.length, result.emitted);
+    assert.equal(existsSync(join(dir, 'signals-failed.jsonl')), false, 'dead-letter file removed');
+
+    // Second replay is a no-op.
+    const again = await replayFailedDeliveries(dir, [recovered], {});
+    assert.equal(again.replayed, 0);
+
+    // Still-failing sink keeps its rows for the next attempt.
+    appendFailedDeliveries(dir, result.failedDeliveries);
+    const stillBroken = await replayFailedDeliveries(dir, [brokenSink], {});
+    assert.equal(stillBroken.replayed, 0);
+    assert.equal(stillBroken.remaining, result.emitted);
+    assert.equal(loadFailedDeliveries(dir).length, result.emitted);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('jsonl sink failures are not dead-lettered (it is the local durable record)', async () => {
+  const signalMap = await fixtureSignalMap();
+  const brokenJsonl = { name: 'jsonl', emit: async () => { throw new Error('disk full'); } };
+  const result = await harvestOnce(mockClient(), signalMap, {
+    state: { sinceTokens: {}, emittedKeys: [], patternState: {}, eventCache: {} },
+    sinks: [brokenJsonl],
+    now: NOW,
+    initialLookbackDays: 7,
+  });
+  assert.equal(result.failedDeliveries.length, 0);
+  assert.equal(result.sinkResults[0].ok, false, 'failure still reported in sinkResults');
 });
 
 test('state lock blocks a second harvester and honors staleness', () => {

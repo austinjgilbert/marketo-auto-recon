@@ -4,6 +4,21 @@
   "private": true,
   "license": "MIT",
   "description": "Marketo Auto Recon — point it at any Marketo instance and it inspects, inventories, maps the useful data, normalizes buyer journeys, produces 20-second seller snapshots, and continuously harvests state-change signals for action. Read-only. Zero dependencies.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/austinjgilbert/marketo-auto-recon.git"
+  },
+  "author": "Austin Gilbert",
+  "keywords": [
+    "marketo",
+    "recon",
+    "signals",
+    "sales-intelligence",
+    "buyer-journey",
+    "sdr",
+    "cli",
+    "zero-dependency"
+  ],
   "type": "module",
   "bin": {
     "mse": "./bin/mse.js"

@@ -40,8 +40,10 @@ policies.
 Yes — the narrative-snapshot path ships journey data (names, emails, activity history) to
 Anthropic's API. Review this with your legal/privacy team before enabling it in production.
 Set `MSE_LLM_REDACT=1` to pseudonymize emails and surnames before anything is sent (first
-names and company domains are kept so the brief still reads). The deterministic pipeline
-never needs the key at all.
+names and company domains are kept so the brief still reads). Note the redaction's limits:
+free-text form comments (whatever a lead typed into a "Comments" box) and company names are
+NOT redacted — if those matter to your privacy posture, leave the LLM path off. The
+deterministic pipeline never needs the key at all.
 
 ## Running it
 
@@ -73,6 +75,12 @@ review pass is an expected step (see [PLAN.md](PLAN.md) Phase 2), not a failure 
 They're listed under `unmapped` in the signal map and reported by `mse explain` — flagged,
 never silently dropped and never guessed.
 
+**What about activity types or forms created AFTER I ran `mse map`?**
+The harvester checks for them once a day (drift detection, 2 API calls): new items are
+logged loudly, hot-mapped for the current run when the heuristics are confident, and shown
+in `mse explain` under "Drift detected". Your hand-edited `signal-map.json` is never
+rewritten automatically — re-run `mse map` and re-review to make the additions permanent.
+
 **Our funnel thresholds are different (score jumps, stall windows, binge counts).**
 All thresholds live in `signal-map.json` and are meant to be tuned per instance.
 
@@ -82,6 +90,12 @@ All thresholds live in `signal-map.json` and are meant to be tuned per instance.
 Three built-in sinks: a local JSONL file (always on), a generic webhook with optional HMAC
 signing, and the Wrangler ingest-batch adapter. Writing your own sink is one function — see
 "Build on top of it" in [PLAN.md](PLAN.md) and `src/sinks/webhook.js` as the template.
+
+**What happens if my webhook / downstream system is down during a poll?**
+Nothing is lost. Signals whose delivery failed are written to
+`outputs/signals-failed.jsonl`; run `mse harvest --replay-failed` once the sink recovers and
+they're re-sent (rows that succeed are removed, still-failing rows are kept). The local
+`signals.jsonl` always has everything regardless.
 
 **Will duplicate signals fire every poll?**
 No. Every signal has a `dedupeKey`, and emitted keys plus Marketo paging tokens persist in

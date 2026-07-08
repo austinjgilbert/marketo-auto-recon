@@ -88,8 +88,8 @@ Optional: set `ANTHROPIC_API_KEY` in `.env` for the narrative pass.
 Configure sinks in `.env` (any combination):
 
 ```
-WRANGLER_URL=https://website-scanner.<your-subdomain>.workers.dev
-WRANGLER_API_KEY=<MOLT_API_KEY>
+WRANGLER_URL=https://your-worker.example.workers.dev
+WRANGLER_API_KEY=<your API key>
 SINK_WEBHOOK_URL=https://your-receiver.example.com/marketo-signals
 SINK_WEBHOOK_SECRET=<shared secret>
 ```
@@ -135,8 +135,8 @@ Notes:
 - [ ] A seller confirmed one snapshot is accurate and actionable.
 - [ ] `mse harvest --once` twice in a row: second run emits 0 (dedupe + token advance working).
 - [ ] Daemon/cron running; signals arriving at the configured sink.
-- [ ] (Wrangler) `signal` documents with `source == "marketo"` visible within a week
-      (`node scripts/prove-throughput.mjs` from the repo root).
+- [ ] (If using the Wrangler sink) signals with `source == "marketo"` visible in the
+      downstream system within a week.
 - [ ] `mse explain` output shared with the GTM team.
 
 ## Troubleshooting
@@ -151,3 +151,4 @@ Notes:
 | `another harvest is already running` | A daemon holds `outputs/.state.lock` — stop it, or wait; stale locks clear themselves after 15 min |
 | `DAILY API BUDGET EXHAUSTED` in logs | The harvester hit `MSE_DAILY_API_BUDGET` — raise it if the volume is expected, or investigate what's pulling so much history |
 | Wrangler sink `skipped` = everything | Domains aren't named accounts in Wrangler — expected unless the account exists |
+| Sink was down during a poll | Failed signals are in `outputs/signals-failed.jsonl` — run `mse harvest --replay-failed` after the sink recovers |

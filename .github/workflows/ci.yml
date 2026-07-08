@@ -25,3 +25,5 @@ jobs:
         run: |
           MSE_MOCK=1 node bin/mse.js harvest --once | tee /tmp/harvest2.txt
           grep -q "Emitted 0 signal(s)." /tmp/harvest2.txt
+      - name: Domain snapshot resolves from harvest state
+        run: MSE_MOCK=1 node bin/mse.js snapshot --domain acme.com | grep -q "Seller snapshot"

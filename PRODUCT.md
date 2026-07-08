@@ -37,6 +37,10 @@ You don't need a data team, a CDP project, or six months. You need a tool that:
 5. **Never sleeps.** A daemon watches for state changes — form fills, pricing visits, content
    binges, stalls, reactivations, committee growth — and emits deduped, evidence-backed
    signals to whatever system acts on them (a file, a webhook, a CRM, an agent pipeline).
+6. **Keeps up with the instance.** Marketing ops never stops building. Once a day the daemon
+   re-inventories activity types and forms, flags anything created after mapping, and
+   hot-maps what it can classify confidently — so the understanding of the instance doesn't
+   silently decay while nobody is looking.
 
 **Signal → action is the goal.** Everything else is plumbing in service of a seller doing the
 right human thing at the right moment.

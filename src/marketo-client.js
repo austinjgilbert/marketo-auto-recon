@@ -240,8 +240,12 @@ export class MarketoClient {
    * Pull the full activity history for a set of leads since a datetime.
    * Chunks both axes of Marketo's caps: 10 activityTypeIds and 30 leadIds
    * per request — large buying committees would otherwise throw error 1003.
+   *
+   * `shouldStop` is checked between lead chunks so a caller-side budget can
+   * halt a large pull; `onLeadChunkDone(ids)` fires after a lead chunk's
+   * history is fully fetched, letting callers track which leads completed.
    */
-  async getLeadActivities(leadIds, { sinceDatetime, activityTypeIds }) {
+  async getLeadActivities(leadIds, { sinceDatetime, activityTypeIds, shouldStop, onLeadChunkDone }) {
     const token = await this.getPagingToken(sinceDatetime);
     const all = [];
     const typeChunks = [];
@@ -253,6 +257,10 @@ export class MarketoClient {
       leadChunks.push(allLeadIds.slice(i, i + LEAD_IDS_MAX));
     }
     for (const leadChunk of leadChunks) {
+      if (shouldStop?.()) {
+        this.log(`getLeadActivities stopped early by caller — ${leadChunks.length} lead chunk(s) planned, stopping before this one`);
+        break;
+      }
       for (const chunk of typeChunks) {
         for await (const page of this.iterateActivities({
           nextPageToken: token,
@@ -262,6 +270,7 @@ export class MarketoClient {
           all.push(...page.activities);
         }
       }
+      onLeadChunkDone?.(leadChunk);
     }
     return all.sort((a, b) => new Date(a.activityDate) - new Date(b.activityDate));
   }
