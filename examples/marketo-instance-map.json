@@ -1,0 +1,430 @@
+{
+  "generatedAt": "2026-07-08T03:41:47.074Z",
+  "counts": {
+    "activityTypes": 16,
+    "customActivityTypes": 3,
+    "leadFields": 21,
+    "programs": 5,
+    "smartCampaigns": 3,
+    "forms": 5,
+    "landingPages": 6,
+    "emails": 3,
+    "campaigns": 2,
+    "dataQualityIssues": 6
+  },
+  "activityTypes": [
+    {
+      "id": 1,
+      "name": "Visit Webpage",
+      "description": "User visits a web page",
+      "custom": false,
+      "primaryAttribute": "Webpage ID"
+    },
+    {
+      "id": 2,
+      "name": "Fill Out Form",
+      "description": "User fills out a form",
+      "custom": false,
+      "primaryAttribute": "Form ID"
+    },
+    {
+      "id": 3,
+      "name": "Click Link",
+      "description": "User clicks a link on a page",
+      "custom": false,
+      "primaryAttribute": "Link ID"
+    },
+    {
+      "id": 6,
+      "name": "Send Email",
+      "description": "Email sent to lead",
+      "custom": false,
+      "primaryAttribute": "Email ID"
+    },
+    {
+      "id": 7,
+      "name": "Email Delivered",
+      "description": "Email delivered",
+      "custom": false,
+      "primaryAttribute": "Email ID"
+    },
+    {
+      "id": 8,
+      "name": "Email Bounced",
+      "description": "Email bounced",
+      "custom": false,
+      "primaryAttribute": "Email ID"
+    },
+    {
+      "id": 9,
+      "name": "Unsubscribe Email",
+      "description": "Lead unsubscribes",
+      "custom": false,
+      "primaryAttribute": "Email ID"
+    },
+    {
+      "id": 10,
+      "name": "Open Email",
+      "description": "Lead opens email",
+      "custom": false,
+      "primaryAttribute": "Email ID"
+    },
+    {
+      "id": 11,
+      "name": "Click Email",
+      "description": "Lead clicks email link",
+      "custom": false,
+      "primaryAttribute": "Email ID"
+    },
+    {
+      "id": 12,
+      "name": "New Lead",
+      "description": "Lead created",
+      "custom": false,
+      "primaryAttribute": "Lead ID"
+    },
+    {
+      "id": 13,
+      "name": "Change Data Value",
+      "description": "Field value changed",
+      "custom": false,
+      "primaryAttribute": "Attribute Name"
+    },
+    {
+      "id": 22,
+      "name": "Change Score",
+      "description": "Lead score changed",
+      "custom": false,
+      "primaryAttribute": "Score Name"
+    },
+    {
+      "id": 46,
+      "name": "Interesting Moment",
+      "description": "Flagged interesting moment",
+      "custom": false,
+      "primaryAttribute": "Type"
+    },
+    {
+      "id": 100001,
+      "name": "Attended Webinar (GoToWebinar)",
+      "description": "Custom: webinar attendance sync",
+      "custom": true,
+      "primaryAttribute": "Webinar Name"
+    },
+    {
+      "id": 100002,
+      "name": "Started Product Trial",
+      "description": "Custom: product-led trial start",
+      "custom": true,
+      "primaryAttribute": "Trial Plan"
+    },
+    {
+      "id": 100003,
+      "name": "Legacy Sync Event",
+      "description": "Custom: deprecated ESB sync (unused since 2023)",
+      "custom": true,
+      "primaryAttribute": "Payload"
+    }
+  ],
+  "fieldsByCategory": {
+    "standard-other": [
+      {
+        "name": "id",
+        "displayName": "Id",
+        "dataType": "integer"
+      },
+      {
+        "name": "email",
+        "displayName": "Email Address",
+        "dataType": "email"
+      },
+      {
+        "name": "firstName",
+        "displayName": "First Name",
+        "dataType": "string"
+      },
+      {
+        "name": "lastName",
+        "displayName": "Last Name",
+        "dataType": "string"
+      },
+      {
+        "name": "title",
+        "displayName": "Job Title",
+        "dataType": "string"
+      }
+    ],
+    "company": [
+      {
+        "name": "company",
+        "displayName": "Company Name",
+        "dataType": "string"
+      },
+      {
+        "name": "website",
+        "displayName": "Website",
+        "dataType": "url"
+      },
+      {
+        "name": "inferredCompany",
+        "displayName": "Inferred Company",
+        "dataType": "string"
+      }
+    ],
+    "scoring": [
+      {
+        "name": "leadScore",
+        "displayName": "Lead Score",
+        "dataType": "integer"
+      }
+    ],
+    "lifecycle": [
+      {
+        "name": "leadStatus",
+        "displayName": "Lead Status",
+        "dataType": "string"
+      },
+      {
+        "name": "lifecycleStage__c",
+        "displayName": "Lifecycle Stage",
+        "dataType": "string"
+      }
+    ],
+    "utm": [
+      {
+        "name": "utm_source__c",
+        "displayName": "UTM Source",
+        "dataType": "string"
+      },
+      {
+        "name": "utm_medium__c",
+        "displayName": "UTM Medium",
+        "dataType": "string"
+      },
+      {
+        "name": "utm_campaign__c",
+        "displayName": "UTM Campaign",
+        "dataType": "string"
+      }
+    ],
+    "attribution": [
+      {
+        "name": "originalSourceType",
+        "displayName": "Original Source Type",
+        "dataType": "string"
+      },
+      {
+        "name": "acquisitionProgramId",
+        "displayName": "Acquisition Program",
+        "dataType": "integer"
+      },
+      {
+        "name": "mktoAcquisitionDate",
+        "displayName": "Acquisition Date",
+        "dataType": "datetime"
+      }
+    ],
+    "competitive": [
+      {
+        "name": "competitorTool__c",
+        "displayName": "Competitor Tool In Use",
+        "dataType": "string"
+      }
+    ],
+    "partner": [
+      {
+        "name": "partnerAgency__c",
+        "displayName": "Implementation Partner",
+        "dataType": "string"
+      }
+    ],
+    "suspect": [
+      {
+        "name": "legacyRegion2014__c",
+        "displayName": "Legacy Region (2014)",
+        "dataType": "string"
+      },
+      {
+        "name": "tempField_DO_NOT_USE__c",
+        "displayName": "tempField DO NOT USE",
+        "dataType": "string"
+      }
+    ]
+  },
+  "programs": [
+    {
+      "id": 1001,
+      "name": "WBN-2026-05-AI-Content-Readiness",
+      "type": "Event",
+      "channel": "Webinar",
+      "status": "Completed"
+    },
+    {
+      "id": 1002,
+      "name": "NUR-Evergreen-Product-Education",
+      "type": "Engagement",
+      "channel": "Nurture",
+      "status": "On"
+    },
+    {
+      "id": 1003,
+      "name": "CON-Whitepaper-Composable-Content",
+      "type": "Default",
+      "channel": "Content Download",
+      "status": "On"
+    },
+    {
+      "id": 1004,
+      "name": "EVT-2019-Roadshow-Chicago",
+      "type": "Event",
+      "channel": "Roadshow",
+      "status": "Completed"
+    },
+    {
+      "id": 1005,
+      "name": "OPS-Data-Cleanup-2022",
+      "type": "Default",
+      "channel": "Operational",
+      "status": "Completed"
+    }
+  ],
+  "smartCampaigns": [
+    {
+      "id": 2001,
+      "name": "Score - Pricing Page Visit",
+      "status": "Active"
+    },
+    {
+      "id": 2002,
+      "name": "MQL Threshold Alert",
+      "status": "Active"
+    },
+    {
+      "id": 2003,
+      "name": "Old Field Sync (broken)",
+      "status": "Deactivated"
+    }
+  ],
+  "forms": [
+    {
+      "id": 3001,
+      "name": "Contact Sales",
+      "status": "approved"
+    },
+    {
+      "id": 3002,
+      "name": "Demo Request",
+      "status": "approved"
+    },
+    {
+      "id": 3003,
+      "name": "Whitepaper Download - Composable Content",
+      "status": "approved"
+    },
+    {
+      "id": 3004,
+      "name": "Newsletter Signup",
+      "status": "approved"
+    },
+    {
+      "id": 3005,
+      "name": "Webinar Registration - AI Content Readiness",
+      "status": "approved"
+    }
+  ],
+  "landingPages": [
+    {
+      "id": 4001,
+      "name": "Pricing",
+      "url": "https://www.example-saas.com/pricing"
+    },
+    {
+      "id": 4002,
+      "name": "Product - Content Platform",
+      "url": "https://www.example-saas.com/product/content-platform"
+    },
+    {
+      "id": 4003,
+      "name": "Blog - Structured Content 101",
+      "url": "https://www.example-saas.com/blog/structured-content-101"
+    },
+    {
+      "id": 4004,
+      "name": "Blog - Migrating Off Legacy CMS",
+      "url": "https://www.example-saas.com/blog/migrating-off-legacy-cms"
+    },
+    {
+      "id": 4005,
+      "name": "Docs - API Reference",
+      "url": "https://www.example-saas.com/docs/api"
+    },
+    {
+      "id": 4006,
+      "name": "Compare - Us vs LegacyCMS",
+      "url": "https://www.example-saas.com/compare/legacycms"
+    }
+  ],
+  "emails": [
+    {
+      "id": 5001,
+      "name": "NUR-01 Welcome to Product Education",
+      "subject": "Getting started with structured content"
+    },
+    {
+      "id": 5002,
+      "name": "NUR-02 Composable Content Whitepaper",
+      "subject": "The composable content playbook"
+    },
+    {
+      "id": 5003,
+      "name": "WBN Invite - AI Content Readiness",
+      "subject": "Is your content AI-ready? Live session"
+    }
+  ],
+  "campaigns": [
+    {
+      "id": 6001,
+      "name": "Score - Pricing Page Visit",
+      "type": "trigger",
+      "active": true
+    },
+    {
+      "id": 6002,
+      "name": "MQL Threshold Alert",
+      "type": "trigger",
+      "active": true
+    }
+  ],
+  "dataQualityIssues": [
+    {
+      "kind": "suspect-field",
+      "subject": "legacyRegion2014__c",
+      "detail": "Field name suggests it is temporary/deprecated (\"Legacy Region (2014)\"). Verify before mapping."
+    },
+    {
+      "kind": "suspect-field",
+      "subject": "tempField_DO_NOT_USE__c",
+      "detail": "Field name suggests it is temporary/deprecated (\"tempField DO NOT USE\"). Verify before mapping."
+    },
+    {
+      "kind": "stale-program",
+      "subject": "EVT-2019-Roadshow-Chicago",
+      "detail": "Program references 2019 and is not active — candidate for archive; exclude from mapping."
+    },
+    {
+      "kind": "stale-program",
+      "subject": "OPS-Data-Cleanup-2022",
+      "detail": "Program references 2022 and is not active — candidate for archive; exclude from mapping."
+    },
+    {
+      "kind": "inactive-smart-campaign",
+      "subject": "Old Field Sync (broken)",
+      "detail": "Smart campaign is deactivated or self-describes as broken (status: Deactivated)."
+    },
+    {
+      "kind": "dead-custom-activity",
+      "subject": "Legacy Sync Event",
+      "detail": "Custom activity type 100003 self-describes as legacy/unused — likely noise."
+    }
+  ]
+}

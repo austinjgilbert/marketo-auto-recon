@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-08T03:41:47.144Z",
+  "note": "This file is meant to be reviewed and hand-edited. Re-run `mse map` to regenerate (your edits will be overwritten — keep a copy or bump `version`).",
+  "activityTypes": {
+    "1": {
+      "name": "Visit Webpage",
+      "canonical": "web_visit",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 1 (Visit Webpage)"
+    },
+    "2": {
+      "name": "Fill Out Form",
+      "canonical": "form_fill",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 2 (Fill Out Form)"
+    },
+    "3": {
+      "name": "Click Link",
+      "canonical": "link_click",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 3 (Click Link)"
+    },
+    "6": {
+      "name": "Send Email",
+      "canonical": "email_sent",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 6 (Send Email)"
+    },
+    "7": {
+      "name": "Email Delivered",
+      "canonical": "email_delivered",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 7 (Email Delivered)"
+    },
+    "8": {
+      "name": "Email Bounced",
+      "canonical": "email_bounced",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 8 (Email Bounced)"
+    },
+    "9": {
+      "name": "Unsubscribe Email",
+      "canonical": "unsubscribe",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 9 (Unsubscribe Email)"
+    },
+    "10": {
+      "name": "Open Email",
+      "canonical": "email_open",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 10 (Open Email)"
+    },
+    "11": {
+      "name": "Click Email",
+      "canonical": "email_click",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 11 (Click Email)"
+    },
+    "12": {
+      "name": "New Lead",
+      "canonical": "new_lead",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 12 (New Lead)"
+    },
+    "13": {
+      "name": "Change Data Value",
+      "canonical": "data_change",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 13 (Change Data Value)"
+    },
+    "22": {
+      "name": "Change Score",
+      "canonical": "score_change",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 22 (Change Score)"
+    },
+    "46": {
+      "name": "Interesting Moment",
+      "canonical": "interesting_moment",
+      "confidence": 1,
+      "rationale": "Standard Marketo activity type 46 (Interesting Moment)"
+    },
+    "100001": {
+      "name": "Attended Webinar (GoToWebinar)",
+      "canonical": "ignore",
+      "confidence": 0.6,
+      "rationale": "Custom type name/description matches /legacy|deprecated|unused|sync|etl|migration|do.?not/"
+    },
+    "100002": {
+      "name": "Started Product Trial",
+      "canonical": "trial_start",
+      "confidence": 0.75,
+      "rationale": "Custom type name/description matches /trial|signup|sign.?up|free.?tier|activation|onboard/"
+    },
+    "100003": {
+      "name": "Legacy Sync Event",
+      "canonical": "ignore",
+      "confidence": 0.6,
+      "rationale": "Custom type name/description matches /legacy|deprecated|unused|sync|etl|migration|do.?not/"
+    }
+  },
+  "forms": {
+    "Contact Sales": {
+      "signalType": "contact_us",
+      "confidence": 0.95,
+      "rationale": "Form name matches /contact|talk to|speak (to|with)|get in touch|sales/"
+    },
+    "Demo Request": {
+      "signalType": "demo_request",
+      "confidence": 0.95,
+      "rationale": "Form name matches /demo|trial request|see it|book a/"
+    },
+    "Whitepaper Download - Composable Content": {
+      "signalType": "content_download",
+      "confidence": 0.85,
+      "rationale": "Form name matches /whitepaper|ebook|e-book|guide|download|report|checklist/"
+    },
+    "Newsletter Signup": {
+      "signalType": "newsletter",
+      "confidence": 0.85,
+      "rationale": "Form name matches /newsletter|subscribe|updates/"
+    },
+    "Webinar Registration - AI Content Readiness": {
+      "signalType": "event_registration",
+      "confidence": 0.85,
+      "rationale": "Form name matches /webinar|event|register|workshop|conference/"
+    }
+  },
+  "urlPatterns": {
+    "pricing": [
+      "/pricing"
+    ],
+    "competitor": [
+      "/compare/legacycms"
+    ],
+    "docs": [
+      "/docs/api"
+    ],
+    "product": [
+      "/product/content-platform"
+    ],
+    "blog": [
+      "/blog/structured-content-101",
+      "/blog/migrating-off-legacy-cms"
+    ],
+    "case-study": []
+  },
+  "thresholds": {
+    "scoreJumpMin": 10,
+    "contentBingeTouches": 3,
+    "contentBingeWindowHours": 72,
+    "stallGapDays": 21,
+    "intentSurgeTouches": 5,
+    "intentSurgeWindowHours": 24
+  },
+  "unmapped": []
+}

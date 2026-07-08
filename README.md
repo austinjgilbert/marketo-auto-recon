@@ -1,5 +1,10 @@
 # Marketo Auto Recon
 
+[![CI](https://github.com/austinjgilbert/marketo-auto-recon/actions/workflows/ci.yml/badge.svg)](https://github.com/austinjgilbert/marketo-auto-recon/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Node >= 18](https://img.shields.io/badge/node-%E2%89%A5%2018-brightgreen)
+![Dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)
+
 **Point it at any Marketo instance — even one nobody understands — and in an afternoon you get
 a full map of what's in there, chronological buyer journeys, seller-ready briefs, and a live
 feed of buying signals.**
@@ -15,6 +20,18 @@ right there in the activity log. Marketo Auto Recon closes that gap with five st
    care about, where they're stuck, what to say, and who else is on the buying committee.
 5. **Harvest** — continuously watch for state changes (form fill, pricing visit, content binge,
    stall, reactivation, committee growth) and emit deduped signals to wherever you act on them.
+
+```mermaid
+flowchart LR
+    M[(Marketo<br/>REST API<br/>read-only)] --> R[1. recon<br/>instance map + DQ audit]
+    R --> P[2. map<br/>signal-map.json<br/>human reviews this]
+    P --> N[3. normalize<br/>journey per lead/account]
+    N --> S[4. snapshot<br/>9-section seller brief]
+    N --> H[5. harvest daemon<br/>state-change signals]
+    H --> J[signals.jsonl]
+    H --> W[webhook<br/>HMAC signed]
+    H --> G[Wrangler / your<br/>agent pipeline]
+```
 
 Built to be picked up and run by anyone:
 
@@ -36,6 +53,11 @@ npm run demo    # recon -> map -> snapshot -> harvest -> explain, all against th
 
 Then read `outputs/marketo-instance-map.md` and `outputs/snapshots/` — that's what your real
 instance will produce.
+
+**Zero-effort version:** the [examples/](examples/) folder has the committed output of that
+demo. Start with [the seller snapshot](examples/snapshots/jane.doe%40acme.com.md) — Jane
+submitted "Contact Sales" after months of pricing visits and competitor research, and this is
+what her rep sees 20 seconds later.
 
 ## Run it on a real instance
 
@@ -60,9 +82,12 @@ rollout checklist are in [RUNBOOK.md](RUNBOOK.md).
 |---|---|
 | [PRODUCT.md](PRODUCT.md) | The product idea — the problem, the thesis, who it's for, design principles |
 | [PLAN.md](PLAN.md) | The adoption plan — first afternoon to production daemon, plus how to build on top of it |
-| [REFERENCE.md](REFERENCE.md) | Technical reference — stage outputs, journey-blob schema, signal catalog, sinks |
+| [examples/](examples/) | Committed output of the demo: instance map, signal map, seller snapshot, harvested signals |
+| [FAQ.md](FAQ.md) | Safety, permissions, API quota, PII, LLM optionality, multi-instance, porting to other platforms |
+| [REFERENCE.md](REFERENCE.md) | Technical reference — stage outputs, journey-blob schema, signal catalog, sinks, code map |
 | [RUNBOOK.md](RUNBOOK.md) | Deployment guide for the engineer with Marketo access |
 | [CLAUDE.md](CLAUDE.md) | Drop-in instructions so a coding agent (Claude Code / Cursor) drives the whole autopilot for you |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Ground rules and extension points if you want to build on it |
 
 ## Tests
 
