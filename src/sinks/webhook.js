@@ -1,12 +1,20 @@
 /**
  * Generic webhook sink — POSTs each signal batch as JSON. When a secret is
- * configured, the body is signed with HMAC-SHA256 in the X-MSE-Signature
- * header so receivers can verify origin.
+ * configured, the request carries an X-MSE-Timestamp header and an
+ * X-MSE-Signature header: HMAC-SHA256 over `${timestamp}.${body}`. Signing
+ * the timestamp lets receivers reject replays — verify the signature AND
+ * that the timestamp is within a tolerance window (e.g. 5 minutes).
  */
 
 import { createHmac } from 'node:crypto';
 
-export function createWebhookSink({ url, secret, fetchImpl = fetch }) {
+const HTTP_TIMEOUT_MS = 30_000;
+
+export function signWebhookBody(secret, timestamp, body) {
+  return createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+}
+
+export function createWebhookSink({ url, secret, fetchImpl = fetch, timeoutMs = HTTP_TIMEOUT_MS }) {
   return {
     name: 'webhook',
     async emit(signals) {
@@ -14,9 +22,11 @@ export function createWebhookSink({ url, secret, fetchImpl = fetch }) {
       const body = JSON.stringify({ source: 'marketo-signal-engine', signals });
       const headers = { 'content-type': 'application/json' };
       if (secret) {
-        headers['x-mse-signature'] = createHmac('sha256', secret).update(body).digest('hex');
+        const timestamp = String(Date.now());
+        headers['x-mse-timestamp'] = timestamp;
+        headers['x-mse-signature'] = signWebhookBody(secret, timestamp, body);
       }
-      const res = await fetchImpl(url, { method: 'POST', headers, body });
+      const res = await fetchImpl(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(timeoutMs) });
       return { ok: res.ok, sent: res.ok ? signals.length : 0, status: res.status };
     },
   };

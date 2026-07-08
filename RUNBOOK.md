@@ -18,12 +18,15 @@ Ask your Marketo administrator for a **REST API custom service** with a **read-o
 4. **Admin → Integration → Web Services.** Copy the **REST API Endpoint**
    (`https://XXX-XXX-XXX.mktorest.com/rest`) — the base URL is that minus `/rest`.
 
-The engine never writes to Marketo (the client is GET-only by construction), but the
-read-only role means nobody has to take that on faith.
+The engine never writes to Marketo (every REST call is a GET by construction; the only POST
+is the OAuth handshake to the identity endpoint), but the read-only role means nobody has to
+take that on faith.
 
 **API budget:** Marketo allows 50,000 REST calls/day and 100 calls/20s. The engine
-rate-limits itself to 90/20s. A 15-minute harvest cadence on a mid-size instance uses a few
-hundred calls/day; recon is a one-time ~30 calls.
+rate-limits itself to 90/20s, keeps a rolling per-account event cache so history is pulled
+once per lead (not every poll), and stops history pulls if a persisted daily counter passes
+`MSE_DAILY_API_BUDGET` (default 10,000). A 15-minute harvest cadence on a mid-size instance
+uses a few hundred calls/day; recon is a one-time ~30 calls.
 
 ## Phase 1 — Install and authenticate
 
@@ -109,8 +112,17 @@ node bin/mse.js harvest --daemon --interval 15m
 `WorkingDirectory = <this folder>`.
 
 Notes:
-- First run only looks back 7 days (so a fresh install doesn't flood sinks with months of
-  history). State lives in `outputs/.state.json`; delete it to re-baseline.
+- First run only looks back `MSE_INITIAL_LOOKBACK_DAYS` (default 7, so a fresh install
+  doesn't flood sinks with months of history). State lives in `outputs/.state.json`; delete
+  it to re-baseline.
+- A `.state.lock` file prevents a cron `--once` from colliding with a running daemon — the
+  second process exits with a clear message instead of clobbering state. Stale locks
+  (>15 min without refresh) are stolen automatically.
+- Move all local artifacts (maps, snapshots, signals, state) with `MSE_OUTPUT_DIR` — useful
+  for global installs, read-only deploy dirs, or data-retention mount points.
+- Tuning env vars (defaults in `.env.example`): `MSE_HTTP_TIMEOUT`, `MSE_ASSET_MAX`,
+  `MSE_DAILY_API_BUDGET`, `MSE_EMITTED_KEYS_CAP`, `MSE_LOOKBACK_DAYS`,
+  `MSE_INITIAL_LOOKBACK_DAYS`.
 - Wrangler-side: rows whose domain matches no `account` document are **skipped by design**
   (named-accounts-only). `skipped > 0` in the sink result is normal.
 
@@ -135,5 +147,7 @@ Notes:
 | `Marketo error 606` repeatedly | Another integration is consuming the 100/20s budget — increase harvest interval |
 | Recon shows 0 programs/forms | API role lacks Read-Only Assets — fix the role, not the tool |
 | `mse test` shows an empty journey | Lead exists but has no activity in the lookback window — try `--lookback 365` |
-| Harvest emits nothing, ever | Check `outputs/.state.json` token isn't ahead (delete to re-baseline); confirm the mapped activity types actually occur |
+| Harvest emits nothing, ever | Check `outputs/.state.json` tokens aren't ahead (delete to re-baseline); confirm the mapped activity types actually occur |
+| `another harvest is already running` | A daemon holds `outputs/.state.lock` — stop it, or wait; stale locks clear themselves after 15 min |
+| `DAILY API BUDGET EXHAUSTED` in logs | The harvester hit `MSE_DAILY_API_BUDGET` — raise it if the volume is expected, or investigate what's pulling so much history |
 | Wrangler sink `skipped` = everything | Domains aren't named accounts in Wrangler — expected unless the account exists |

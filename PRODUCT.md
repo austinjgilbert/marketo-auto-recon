@@ -54,7 +54,7 @@ right human thing at the right moment.
 
 | Principle | Consequence |
 |---|---|
-| Trust is the bottleneck, not tech | Read-only client (GET-only, test-enforced); every signal carries the raw activity IDs behind it |
+| Trust is the bottleneck, not tech | Read-only client (GET-only except the OAuth handshake POST, test-enforced); every signal carries the raw activity IDs behind it |
 | A human owns the mapping | `signal-map.json` is plain, hand-editable JSON with confidence + rationale per row; unmapped types are flagged, never silently dropped |
 | Zero adoption friction | No npm dependencies, no database, no infrastructure — Node ≥ 18 and a `.env` file |
 | Prove before you scale | `--mock` mode demos everything without credentials; `mse test` validates the map on one lead before you run thousands |

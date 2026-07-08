@@ -3,10 +3,12 @@
 ## Safety and access
 
 **Can this break my Marketo instance?**
-No. The client is physically incapable of writing — every request goes through one function
-that only issues GET requests, and a test (`client only ever issues GET requests`) fails the
-suite if that ever changes. Still, follow the [RUNBOOK](RUNBOOK.md) and use an API user with a
-read-only role, so the guarantee is enforced on Marketo's side too.
+No. Every Marketo REST call the client makes is a GET, and a test fails the suite if any other
+method is ever issued against a REST endpoint. The single exception is the OAuth handshake —
+one POST of the client credentials to Marketo's identity endpoint (that's authentication, not
+a write, and it keeps the secret out of URLs and access logs). There is no code path that can
+create, update, or delete anything. Still, follow the [RUNBOOK](RUNBOOK.md) and use an API
+user with a read-only role, so the same property is enforced on Marketo's side too.
 
 **What Marketo permissions does it need?**
 A LaunchPoint Custom Service attached to an API-only user with read access to leads,
@@ -14,9 +16,13 @@ activities, and assets. No write scopes. Setup steps are in the [RUNBOOK](RUNBOO
 
 **Will it eat my API quota?**
 It rate-limits itself to 90 calls per 20 seconds (under Marketo's 100/20s cap) and uses
-incremental paging tokens, so it only ever pulls new activity. Recon is a one-time ~30 calls;
-a 15-minute harvest cadence on a mid-size instance is a few hundred calls/day against a
-default daily quota of 50,000.
+incremental paging tokens, so it only ever pulls new activity. Account history is pulled once
+per lead and then maintained in a rolling per-account event cache, so later polls append
+rather than re-pull. Recon is a one-time ~30 calls; a 15-minute harvest cadence on a mid-size
+instance is a few hundred calls/day against a default daily quota of 50,000. As a backstop,
+the harvester keeps a daily API-call counter and stops making history pulls past
+`MSE_DAILY_API_BUDGET` (default 10,000) — event signals keep flowing, and the breach is
+logged loudly.
 
 **Where does the data go?**
 Local files in `outputs/` (gitignored), plus whatever sinks you explicitly configure. There is
@@ -26,7 +32,16 @@ nothing leaves your machine except the Marketo API calls themselves.
 
 **What about PII?**
 The tool processes lead emails and activity history — treat `outputs/` with the same care as a
-CRM export. Nothing is stored anywhere you didn't point a sink at.
+CRM export. Nothing is stored anywhere you didn't point a sink at. You can relocate all local
+artifacts (maps, snapshots, signals, state) with `MSE_OUTPUT_DIR` to satisfy data-retention
+policies.
+
+**Does the LLM option send lead data to Anthropic?**
+Yes — the narrative-snapshot path ships journey data (names, emails, activity history) to
+Anthropic's API. Review this with your legal/privacy team before enabling it in production.
+Set `MSE_LLM_REDACT=1` to pseudonymize emails and surnames before anything is sent (first
+names and company domains are kept so the brief still reads). The deterministic pipeline
+never needs the key at all.
 
 ## Running it
 
@@ -70,7 +85,15 @@ signing, and the Wrangler ingest-batch adapter. Writing your own sink is one fun
 
 **Will duplicate signals fire every poll?**
 No. Every signal has a `dedupeKey`, and emitted keys plus Marketo paging tokens persist in
-`outputs/.state.json` — restarts and re-polls don't re-emit.
+`outputs/.state.json` — restarts and re-polls don't re-emit. The dedupe set keeps the most
+recent 50,000 keys (`MSE_EMITTED_KEYS_CAP`); on very high-volume instances the oldest keys
+eventually evict, so a months-old signal could in principle re-fire — raise the cap if that
+matters to you. A `.state.lock` file prevents two harvesters (say, a cron job and a daemon)
+from clobbering each other's state.
+
+**The default Claude model looks old.**
+Set `ANTHROPIC_MODEL` in `.env` — model names age faster than this README. The default is
+only a fallback.
 
 **Can it watch multiple Marketo instances?**
 Run one clone per instance, each with its own `.env`. State, maps, and outputs live inside

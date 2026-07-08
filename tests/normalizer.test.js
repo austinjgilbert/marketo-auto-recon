@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeActivities, guessRole, domainOf, buildLeadJourney, buildAccountJourney, extractTopics } from '../src/normalizer.js';
+import { normalizeActivities, guessRole, domainOf, isFreemailDomain, buildLeadJourney, buildAccountJourney, extractTopics } from '../src/normalizer.js';
 import { buildSignalMap } from '../src/signal-map.js';
 import { runRecon } from '../src/recon.js';
 import { MarketoClient } from '../src/marketo-client.js';
@@ -37,6 +37,20 @@ test('domainOf prefers email domain, skips freemail, falls back to website', () 
   assert.equal(domainOf({ email: 'a@acme.com' }), 'acme.com');
   assert.equal(domainOf({ email: 'a@gmail.com', website: 'https://www.acme.com/x' }), 'acme.com');
   assert.equal(domainOf({}), null);
+});
+
+test('freemail detection matches exact domains and country variants, never substrings', () => {
+  // Exact providers and dotted country variants are freemail.
+  for (const d of ['gmail.com', 'googlemail.com', 'yahoo.co.uk', 'hotmail.fr', 'outlook.com.br', 'proton.me', 'icloud.com']) {
+    assert.equal(isFreemailDomain(d), true, `${d} should be freemail`);
+  }
+  // Corporate domains that merely CONTAIN a provider name are not.
+  for (const d of ['notgmail.com', 'gmailtools.io', 'liverpool.ac.uk', 'outlookconsulting.com', 'protonstack.dev']) {
+    assert.equal(isFreemailDomain(d), false, `${d} should attribute to an account`);
+  }
+  // domainOf attributes the corporate lookalike instead of skipping it.
+  assert.equal(domainOf({ email: 'jane@notgmail.com' }), 'notgmail.com');
+  assert.equal(domainOf({ email: 'jane@yahoo.co.uk', website: 'https://corp.example' }), 'corp.example');
 });
 
 test('lead journey + account rollup', async () => {

@@ -8,6 +8,7 @@
  */
 
 const BATCH_MAX = 200;
+const HTTP_TIMEOUT_MS = 30_000;
 
 /** One harvested signal → one ingest-batch row. Exported for tests. */
 export function toIngestRow(signal) {
@@ -28,7 +29,7 @@ export function toIngestRow(signal) {
   };
 }
 
-export function createWranglerSink({ url, apiKey, fetchImpl = fetch }) {
+export function createWranglerSink({ url, apiKey, fetchImpl = fetch, timeoutMs = HTTP_TIMEOUT_MS }) {
   const endpoint = `${url.replace(/\/+$/, '')}/signals/ingest-batch`;
   return {
     name: 'wrangler',
@@ -45,6 +46,7 @@ export function createWranglerSink({ url, apiKey, fetchImpl = fetch }) {
             authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({ source: 'marketo-signal-engine', rows }),
+          signal: AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) {
           const body = await res.text().catch(() => '');

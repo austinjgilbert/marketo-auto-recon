@@ -23,7 +23,7 @@ import { createMockTransport } from '../src/mock-transport.js';
 import { runRecon, renderInstanceMapMarkdown } from '../src/recon.js';
 import { buildSignalMap, mapCoverage } from '../src/signal-map.js';
 import { runSnapshotPipeline } from '../src/pipeline.js';
-import { harvestOnce, harvestDaemon, loadState, saveState } from '../src/harvester.js';
+import { harvestOnce, harvestDaemon, loadState, saveState, acquireLock } from '../src/harvester.js';
 import { createJsonlSink } from '../src/sinks/jsonl.js';
 import { createWebhookSink } from '../src/sinks/webhook.js';
 import { createWranglerSink } from '../src/sinks/wrangler.js';
@@ -55,12 +55,14 @@ function makeClient(config) {
       clientId: 'mock',
       clientSecret: 'mock',
       transport: createMockTransport(),
+      timeoutMs: config.httpTimeoutMs,
     });
   }
   return new MarketoClient({
     baseUrl: config.marketo.baseUrl,
     clientId: config.marketo.clientId,
     clientSecret: config.marketo.clientSecret,
+    timeoutMs: config.httpTimeoutMs,
     logger: (msg) => process.env.MSE_DEBUG && console.error(`[marketo] ${msg}`),
   });
 }
@@ -101,7 +103,7 @@ async function cmdRecon(config) {
   const client = makeClient(config);
   const outputDir = ensureOutputDir();
   console.error('Inventorying instance (activity types, fields, programs, forms, assets)...');
-  const map = await runRecon(client);
+  const map = await runRecon(client, { assetMax: config.assetMax });
   writeFileSync(join(outputDir, 'marketo-instance-map.json'), JSON.stringify(map, null, 2));
   writeFileSync(join(outputDir, 'marketo-instance-map.md'), renderInstanceMapMarkdown(map));
   console.log(`Instance map written:`);
@@ -198,26 +200,45 @@ async function cmdHarvest(config, flags) {
   const sinks = buildSinks(config);
   console.error(`Sinks: ${sinks.map((s) => s.name).join(', ')}${sinks.length === 1 ? ' (set WRANGLER_URL/WRANGLER_API_KEY or SINK_WEBHOOK_URL for more)' : ''}`);
 
+  const harvestOptions = {
+    initialLookbackDays: config.initialLookbackDays,
+    journeyLookbackDays: config.lookbackDays,
+    dailyApiBudget: config.dailyApiBudget,
+    emittedKeysCap: config.emittedKeysCap,
+  };
+
   if (flags.daemon) {
     await harvestDaemon(client, signalMap, {
       outputDir,
       sinks,
       intervalMs: parseInterval(flags.interval, config.harvestIntervalMs),
+      nowFn: () => nowFor(config),
+      harvestOptions,
     });
     return;
   }
 
-  const state = loadState(outputDir);
-  const result = await harvestOnce(client, signalMap, {
-    state,
-    sinks,
-    now: nowFor(config),
-    log: (msg) => console.error(`[harvest] ${msg}`),
-  });
-  saveState(outputDir, result.state);
-  console.log(`Emitted ${result.emitted} signal(s).`);
-  for (const s of result.signals) console.log(`  [${s.signalType}] ${s.summary}`);
-  for (const r of result.sinkResults) console.log(`  sink ${r.sink}: ${r.ok ? 'ok' : `FAILED ${r.error || r.status || ''}`}`);
+  const lock = acquireLock(outputDir);
+  if (!lock) {
+    console.error(`Another harvest is already running against ${outputDir} (.state.lock) — exiting without touching state.`);
+    process.exit(1);
+  }
+  try {
+    const state = loadState(outputDir);
+    const result = await harvestOnce(client, signalMap, {
+      state,
+      sinks,
+      now: nowFor(config),
+      log: (msg) => console.error(`[harvest] ${msg}`),
+      ...harvestOptions,
+    });
+    saveState(outputDir, result.state);
+    console.log(`Emitted ${result.emitted} signal(s). API calls today: ${result.apiCallsUsedToday ?? 'n/a'}/${config.dailyApiBudget}.`);
+    for (const s of result.signals) console.log(`  [${s.signalType}] ${s.summary}`);
+    for (const r of result.sinkResults) console.log(`  sink ${r.sink}: ${r.ok ? 'ok' : `FAILED ${r.error || r.status || ''}`}`);
+  } finally {
+    lock.release();
+  }
 }
 
 async function cmdExplain(config) {

@@ -2,16 +2,25 @@
  * Marketo REST client — OAuth2 client-credentials, token caching, a rolling
  * rate limiter (Marketo's documented limit is 100 calls per 20 seconds per
  * instance), automatic re-auth on token expiry (error 602), backoff on rate
- * limit (606) and HTTP 429/5xx, and paging helpers for both the lead-database
- * API (nextPageToken) and the asset API (offset/maxReturn).
+ * limit (606), HTTP 429/5xx, and network timeouts, and paging helpers for
+ * both the lead-database API (nextPageToken) and the asset API
+ * (offset/maxReturn).
  *
- * READ-ONLY BY CONSTRUCTION: only GET requests are ever issued. There is no
- * code path that can create, update, or delete anything in Marketo.
+ * READ-ONLY: every Marketo REST call is a GET. The single exception is the
+ * OAuth token handshake, which POSTs the client credentials to the identity
+ * endpoint (so the secret never appears in a URL/query string that proxies
+ * and access logs would capture). A test enforces that no other method is
+ * ever issued — there is no code path that can create, update, or delete
+ * anything in Marketo.
  */
 
 const RATE_WINDOW_MS = 20_000;
 const RATE_MAX_CALLS = 90; // stay under Marketo's 100/20s with headroom
 const MAX_RETRIES = 5;
+const DEFAULT_TIMEOUT_MS = 30_000;
+const LEAD_IDS_MAX = 30; // Marketo caps leadIds per activities request
+const TYPE_IDS_MAX = 10; // Marketo caps activityTypeIds per request
+const MAX_PAGES = 5_000; // hard backstop against a paging loop that never ends
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -25,8 +34,8 @@ export class MarketoApiError extends Error {
   }
 }
 
-async function fetchTransport(url, { headers } = {}) {
-  const res = await fetch(url, { method: 'GET', headers });
+async function fetchTransport(url, { method = 'GET', headers, body, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const res = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(timeoutMs) });
   let json = null;
   try {
     json = await res.json();
@@ -37,12 +46,13 @@ async function fetchTransport(url, { headers } = {}) {
 }
 
 export class MarketoClient {
-  constructor({ baseUrl, clientId, clientSecret, transport, logger } = {}) {
+  constructor({ baseUrl, clientId, clientSecret, transport, logger, timeoutMs } = {}) {
     this.baseUrl = (baseUrl || '').replace(/\/+$/, '');
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.transport = transport || fetchTransport;
     this.log = logger || (() => {});
+    this.timeoutMs = timeoutMs || DEFAULT_TIMEOUT_MS;
     this.token = null;
     this.tokenExpiresAt = 0;
     this.callTimes = [];
@@ -67,11 +77,18 @@ export class MarketoClient {
 
   async getToken() {
     if (this.token && Date.now() < this.tokenExpiresAt - 30_000) return this.token;
-    const url =
-      `${this.baseUrl}/identity/oauth/token` +
-      `?grant_type=client_credentials&client_id=${encodeURIComponent(this.clientId)}` +
-      `&client_secret=${encodeURIComponent(this.clientSecret)}`;
-    const { status, json } = await this.transport(url, {});
+    // POST body, never the query string: secrets in URLs end up in proxy and
+    // access logs. This is the only non-GET request the client ever makes.
+    const { status, json } = await this.transport(`${this.baseUrl}/identity/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+      }).toString(),
+      timeoutMs: this.timeoutMs,
+    });
     if (status !== 200 || !json?.access_token) {
       throw new MarketoApiError(
         `Auth failed (HTTP ${status}): ${json?.error_description || json?.error || 'no access_token in response'}`,
@@ -97,9 +114,21 @@ export class MarketoClient {
       await this.throttle();
       const token = await this.getToken();
       this.callCount += 1;
-      const { status, json } = await this.transport(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+
+      let status, json;
+      try {
+        ({ status, json } = await this.transport(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          timeoutMs: this.timeoutMs,
+        }));
+      } catch (err) {
+        // Timeouts (AbortError/TimeoutError) and transient network failures
+        // are retryable — a stalled connection must never hang the daemon.
+        lastError = new MarketoApiError(`Network error on ${path}: ${err.message}`, {});
+        this.log(`network error on ${path} (attempt ${attempt + 1}/${MAX_RETRIES}): ${err.message}`);
+        await sleep(2 ** attempt * 1000);
+        continue;
+      }
 
       if (status === 429 || status >= 500) {
         lastError = new MarketoApiError(`HTTP ${status} on ${path}`, { status });
@@ -164,10 +193,15 @@ export class MarketoClient {
   /**
    * Iterate activity pages. Marketo caps activityTypeIds at 10 per call —
    * callers pass chunks. Yields { activities, nextPageToken, moreResult }.
+   * Guarded against non-advancing tokens and unbounded page counts.
    */
   async *iterateActivities({ nextPageToken, activityTypeIds, leadIds, batchSize = 300 }) {
     let token = nextPageToken;
-    for (;;) {
+    for (let pages = 0; ; pages++) {
+      if (pages >= MAX_PAGES) {
+        this.log(`paging backstop hit after ${MAX_PAGES} pages — stopping (possible API paging anomaly)`);
+        return;
+      }
       const json = await this.request('/rest/v1/activities.json', {
         nextPageToken: token,
         activityTypeIds,
@@ -175,9 +209,15 @@ export class MarketoClient {
         batchSize,
       });
       const activities = json.result || [];
-      token = json.nextPageToken || token;
+      const newToken = json.nextPageToken || token;
+      const advanced = newToken !== token;
+      token = newToken;
       yield { activities, nextPageToken: token, moreResult: json.moreResult === true };
       if (json.moreResult !== true) return;
+      if (!advanced && !activities.length) {
+        this.log('moreResult=true but the paging token did not advance and the page was empty — stopping to avoid a loop');
+        return;
+      }
     }
   }
 
@@ -196,21 +236,31 @@ export class MarketoClient {
     return leads[0] || null;
   }
 
-  /** Pull the full activity history for a set of leads since a datetime. */
+  /**
+   * Pull the full activity history for a set of leads since a datetime.
+   * Chunks both axes of Marketo's caps: 10 activityTypeIds and 30 leadIds
+   * per request — large buying committees would otherwise throw error 1003.
+   */
   async getLeadActivities(leadIds, { sinceDatetime, activityTypeIds }) {
     const token = await this.getPagingToken(sinceDatetime);
     const all = [];
-    // Marketo allows max 10 activityTypeIds per request.
-    const chunks = [];
+    const typeChunks = [];
     const ids = activityTypeIds || [];
-    for (let i = 0; i < Math.max(1, ids.length); i += 10) chunks.push(ids.slice(i, i + 10));
-    for (const chunk of chunks) {
-      for await (const page of this.iterateActivities({
-        nextPageToken: token,
-        activityTypeIds: chunk.length ? chunk : undefined,
-        leadIds,
-      })) {
-        all.push(...page.activities);
+    for (let i = 0; i < Math.max(1, ids.length); i += TYPE_IDS_MAX) typeChunks.push(ids.slice(i, i + TYPE_IDS_MAX));
+    const leadChunks = [];
+    const allLeadIds = leadIds || [];
+    for (let i = 0; i < Math.max(1, allLeadIds.length); i += LEAD_IDS_MAX) {
+      leadChunks.push(allLeadIds.slice(i, i + LEAD_IDS_MAX));
+    }
+    for (const leadChunk of leadChunks) {
+      for (const chunk of typeChunks) {
+        for await (const page of this.iterateActivities({
+          nextPageToken: token,
+          activityTypeIds: chunk.length ? chunk : undefined,
+          leadIds: leadChunk.length ? leadChunk : undefined,
+        })) {
+          all.push(...page.activities);
+        }
       }
     }
     return all.sort((a, b) => new Date(a.activityDate) - new Date(b.activityDate));
@@ -218,13 +268,19 @@ export class MarketoClient {
 
   /* ── asset API (offset/maxReturn paging) ── */
 
-  async listAssets(path, { max = 500 } = {}) {
+  async listAssets(path, { max = 500, onTruncate } = {}) {
     const out = [];
+    let lastBatchFull = false;
     for (let offset = 0; out.length < max; offset += 200) {
       const json = await this.request(path, { maxReturn: 200, offset });
       const batch = json.result || [];
       out.push(...batch);
-      if (batch.length < 200) break;
+      lastBatchFull = batch.length === 200;
+      if (!lastBatchFull) break;
+    }
+    if (out.length >= max && lastBatchFull) {
+      this.log(`asset inventory truncated at ${max} for ${path} — raise MSE_ASSET_MAX for a complete inventory`);
+      onTruncate?.(path, max);
     }
     return out.slice(0, max);
   }
@@ -256,8 +312,9 @@ export class MarketoClient {
     for (;;) {
       const json = await this.request('/rest/v1/campaigns.json', { nextPageToken: token, batchSize: 300 });
       out.push(...(json.result || []));
-      if (!json.nextPageToken || !(json.result || []).length || out.length >= max) break;
-      token = json.nextPageToken;
+      const newToken = json.nextPageToken;
+      if (!newToken || newToken === token || !(json.result || []).length || out.length >= max) break;
+      token = newToken;
     }
     return out.slice(0, max);
   }

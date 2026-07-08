@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { harvestOnce, loadState, saveState } from '../src/harvester.js';
+import { harvestOnce, loadState, saveState, acquireLock } from '../src/harvester.js';
 import { toIngestRow, createWranglerSink } from '../src/sinks/wrangler.js';
-import { createWebhookSink } from '../src/sinks/webhook.js';
+import { createWebhookSink, signWebhookBody } from '../src/sinks/webhook.js';
 import { createJsonlSink } from '../src/sinks/jsonl.js';
 import { buildSignalMap } from '../src/signal-map.js';
 import { runRecon } from '../src/recon.js';
@@ -40,7 +41,8 @@ test('harvestOnce emits signals from the initial lookback window and advances th
   });
   assert.ok(result.emitted > 0);
   assert.equal(sink.received.length, result.emitted);
-  assert.ok(result.state.sinceToken, 'token persisted');
+  assert.ok(Object.keys(result.state.sinceTokens).length > 0, 'per-chunk tokens persisted');
+  assert.ok(Object.values(result.state.sinceTokens).every(Boolean));
   const types = result.signals.map((s) => s.signalType);
   assert.ok(types.includes('contact_us'));
   assert.ok(types.includes('pricing_page_visit'));
@@ -81,13 +83,19 @@ test('dedupe keys block re-emission even when activities replay', async () => {
   assert.equal(replay.emitted, 0, 'all replayed signals deduped');
 });
 
-test('state round-trips through disk', () => {
+test('state round-trips through disk (atomic write, no leftover temp file)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'mse-'));
   try {
-    const state = { sinceToken: 'mock:2026-07-01', emittedKeys: ['a', 'b'], patternState: { 'x.com': { knownLeadIds: [1] } }, lastRunAt: 'now' };
+    const state = { sinceTokens: { '1,2': 'mock:2026-07-01' }, emittedKeys: ['a', 'b'], patternState: { 'x.com': { knownLeadIds: [1] } }, eventCache: {}, lastRunAt: 'now' };
     saveState(dir, state);
-    assert.deepEqual(loadState(dir), state);
-    assert.equal(loadState(mkdtempSync(join(tmpdir(), 'mse-empty-'))).sinceToken, null);
+    const loaded = loadState(dir);
+    assert.deepEqual(loaded.sinceTokens, state.sinceTokens);
+    assert.deepEqual(loaded.emittedKeys, state.emittedKeys);
+    assert.deepEqual(loaded.patternState, state.patternState);
+    assert.equal(existsSync(join(dir, '.state.json.tmp')), false, 'temp file renamed away');
+    const empty = loadState(mkdtempSync(join(tmpdir(), 'mse-empty-')));
+    assert.deepEqual(empty.sinceTokens, {});
+    assert.deepEqual(empty.emittedKeys, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -148,10 +156,168 @@ test('wrangler sink posts Bearer-authed batches and reports stored/skipped', asy
   assert.equal(body.rows.length, 3);
 });
 
-test('webhook sink signs the body when a secret is set', async () => {
+test('webhook sink signs timestamp + body when a secret is set (replay protection)', async () => {
   const calls = [];
   const fetchImpl = async (url, opts) => (calls.push({ url, opts }), { ok: true, status: 200 });
   const sink = createWebhookSink({ url: 'https://hook.example.com', secret: 'shh', fetchImpl });
   await sink.emit([{ dedupeKey: 'k', signalType: 'mql' }]);
-  assert.ok(calls[0].opts.headers['x-mse-signature']?.length === 64, 'hmac-sha256 hex signature');
+  const { headers, body } = calls[0].opts;
+  const timestamp = headers['x-mse-timestamp'];
+  assert.ok(/^\d+$/.test(timestamp), 'timestamp header present');
+  assert.equal(headers['x-mse-signature'].length, 64, 'hmac-sha256 hex signature');
+  // Receiver-side verification: HMAC over `${timestamp}.${body}`.
+  const expected = createHmac('sha256', 'shh').update(`${timestamp}.${body}`).digest('hex');
+  assert.equal(headers['x-mse-signature'], expected);
+  assert.equal(signWebhookBody('shh', timestamp, body), expected);
+  // A replayed body with a different timestamp no longer verifies.
+  assert.notEqual(signWebhookBody('shh', String(Number(timestamp) + 60_000), body), expected);
+});
+
+/* ── hardening-pass coverage ── */
+
+function syntheticSignalMap(typeIds) {
+  return {
+    activityTypes: Object.fromEntries(typeIds.map((id) => [id, { canonical: 'web_visit', name: `type-${id}` }])),
+    forms: {},
+    urlPatterns: [],
+    thresholds: {},
+  };
+}
+
+test('per-chunk since-tokens advance independently when >10 types are mapped', async () => {
+  const tokensSeen = [];
+  const transport = async (url) => {
+    if (url.includes('/identity/')) return { status: 200, json: { access_token: 't', expires_in: 3600 } };
+    const params = new URL(url).searchParams;
+    if (url.includes('pagingtoken')) return { status: 200, json: { success: true, nextPageToken: 'seed' } };
+    if (url.includes('/rest/v1/activities.json')) {
+      const chunk = params.get('activityTypeIds');
+      tokensSeen.push({ chunk, token: params.get('nextPageToken') });
+      // Each chunk hands back its own distinct token.
+      return { status: 200, json: { success: true, result: [], nextPageToken: `tok-${chunk}`, moreResult: false } };
+    }
+    return { status: 200, json: { success: true, result: [] } };
+  };
+  const client = new MarketoClient({ baseUrl: 'https://m.mktorest.com', clientId: 'x', clientSecret: 'y', transport });
+  const twelveTypes = Array.from({ length: 12 }, (_, i) => i + 1);
+  const result = await harvestOnce(client, syntheticSignalMap(twelveTypes), {
+    state: loadState(mkdtempSync(join(tmpdir(), 'mse-fresh-'))),
+    sinks: [],
+    now: NOW,
+  });
+  const keys = Object.keys(result.state.sinceTokens);
+  assert.equal(keys.length, 2, 'two 10-type chunks');
+  assert.equal(result.state.sinceTokens['1,2,3,4,5,6,7,8,9,10'], 'tok-1,2,3,4,5,6,7,8,9,10');
+  assert.equal(result.state.sinceTokens['11,12'], 'tok-11,12');
+  assert.ok(tokensSeen.every((t) => t.token === 'seed'), 'both chunks started from the shared seed');
+});
+
+test('legacy single sinceToken migrates by seeding every chunk', async () => {
+  let pagingTokenCalls = 0;
+  const transport = async (url) => {
+    if (url.includes('/identity/')) return { status: 200, json: { access_token: 't', expires_in: 3600 } };
+    if (url.includes('pagingtoken')) {
+      pagingTokenCalls++;
+      return { status: 200, json: { success: true, nextPageToken: 'fresh' } };
+    }
+    if (url.includes('/rest/v1/activities.json')) {
+      const chunk = new URL(url).searchParams.get('activityTypeIds');
+      return { status: 200, json: { success: true, result: [], nextPageToken: `tok-${chunk}`, moreResult: false } };
+    }
+    return { status: 200, json: { success: true, result: [] } };
+  };
+  const client = new MarketoClient({ baseUrl: 'https://m.mktorest.com', clientId: 'x', clientSecret: 'y', transport });
+  const twelveTypes = Array.from({ length: 12 }, (_, i) => i + 1);
+  const result = await harvestOnce(client, syntheticSignalMap(twelveTypes), {
+    state: { sinceToken: 'legacy-token', emittedKeys: [], patternState: {} },
+    sinks: [],
+    now: NOW,
+  });
+  assert.equal(pagingTokenCalls, 0, 'no fresh lookback token fetched — legacy token reused');
+  assert.equal(result.state.sinceToken, null, 'legacy field cleared');
+  assert.equal(Object.keys(result.state.sinceTokens).length, 2);
+});
+
+test('event cache prevents history re-pulls for known leads on later polls', async () => {
+  const signalMap = await fixtureSignalMap();
+  const historyPulls = () => calls.filter((u) => u.includes('/rest/v1/activities.json') && u.includes('leadIds=')).length;
+  let calls = [];
+  const inner = createMockTransport();
+  const transport = async (url, opts) => (calls.push(url), inner(url, opts));
+  const client = () => new MarketoClient({ baseUrl: 'https://m.mktorest.com', clientId: 'x', clientSecret: 'y', transport });
+
+  const first = await harvestOnce(client(), signalMap, {
+    state: loadState(mkdtempSync(join(tmpdir(), 'mse-cache-'))),
+    sinks: [],
+    now: NOW,
+    initialLookbackDays: 7,
+  });
+  assert.ok(historyPulls() > 0, 'first poll pulls history for unseen leads');
+  assert.ok(Object.keys(first.state.eventCache).length > 0, 'event cache populated');
+
+  // Second poll replays the same window (tokens reset) — all leads are now known,
+  // so the pattern pass must reuse the cache instead of re-pulling history.
+  calls = [];
+  const replayState = { ...first.state, sinceTokens: {}, sinceToken: null };
+  const second = await harvestOnce(client(), signalMap, {
+    state: replayState,
+    sinks: [],
+    now: NOW,
+    initialLookbackDays: 7,
+  });
+  assert.equal(historyPulls(), 0, 'no per-lead history pulls on the second poll');
+  assert.equal(second.emitted, 0, 'dedupe still holds');
+});
+
+test('daily API budget stop-guard skips history pulls but event signals still flow', async () => {
+  const signalMap = await fixtureSignalMap();
+  const logs = [];
+  const result = await harvestOnce(mockClient(), signalMap, {
+    state: loadState(mkdtempSync(join(tmpdir(), 'mse-budget-'))),
+    sinks: [],
+    now: NOW,
+    initialLookbackDays: 7,
+    dailyApiBudget: 1,
+    log: (m) => logs.push(m),
+  });
+  assert.ok(logs.some((m) => m.includes('DAILY API BUDGET EXHAUSTED')), 'budget breach logged loudly');
+  const types = result.signals.map((s) => s.signalType);
+  assert.ok(types.includes('contact_us'), 'event signals still emitted');
+  assert.ok(result.apiCallsUsedToday >= 1);
+  assert.equal(result.state.apiBudget.date, NOW.toISOString().slice(0, 10));
+});
+
+test('budget counter resets on a new day', async () => {
+  const signalMap = await fixtureSignalMap();
+  const yesterday = { date: '2020-01-01', used: 999_999 };
+  const result = await harvestOnce(mockClient(), signalMap, {
+    state: { ...loadState(mkdtempSync(join(tmpdir(), 'mse-budget2-'))), apiBudget: yesterday },
+    sinks: [],
+    now: NOW,
+    initialLookbackDays: 7,
+  });
+  assert.equal(result.state.apiBudget.date, NOW.toISOString().slice(0, 10));
+  assert.ok(result.state.apiBudget.used < 999_999, 'stale day discarded');
+  assert.ok(result.emitted > 0, 'yesterday\'s spend does not block today');
+});
+
+test('state lock blocks a second harvester and honors staleness', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mse-lock-'));
+  try {
+    const lock = acquireLock(dir);
+    assert.ok(lock, 'first acquire succeeds');
+    assert.equal(acquireLock(dir), null, 'second acquire blocked while held');
+    lock.release();
+    const again = acquireLock(dir);
+    assert.ok(again, 'acquire succeeds after release');
+    again.release();
+    // Stale lock: holder wrote 20 minutes ago and never refreshed.
+    const stale = acquireLock(dir, { now: Date.now() - 20 * 60_000 });
+    assert.ok(stale, 'seed a stale lock');
+    const stealer = acquireLock(dir);
+    assert.ok(stealer, 'stale lock is stolen');
+    stealer.release();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

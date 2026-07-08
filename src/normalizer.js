@@ -82,11 +82,29 @@ export function guessRole(title) {
   return { role: 'other', lane: 'BTL' };
 }
 
+/** Freemail providers — matched exactly or as a dotted suffix (yahoo.co.uk),
+    never as a substring, so corporate domains like notgmail.com attribute fine. */
+const FREEMAIL_DOMAINS = new Set([
+  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'rocketmail.com',
+  'hotmail.com', 'outlook.com', 'live.com', 'msn.com', 'aol.com',
+  'icloud.com', 'me.com', 'mac.com', 'proton.me', 'protonmail.com', 'pm.me',
+  'gmx.com', 'gmx.net', 'mail.com', 'yandex.com', 'yandex.ru', 'zoho.com',
+  'fastmail.com', 'hey.com', 'tutanota.com', 'mail.ru', 'qq.com', '163.com', '126.com',
+]);
+const FREEMAIL_SUFFIX_BASES = ['yahoo', 'hotmail', 'outlook', 'live', 'googlemail', 'gmx', 'yandex'];
+
+export function isFreemailDomain(domain) {
+  const d = (domain || '').toLowerCase();
+  if (FREEMAIL_DOMAINS.has(d)) return true;
+  // Country variants: yahoo.co.uk, hotmail.fr, outlook.com.br, ...
+  return FREEMAIL_SUFFIX_BASES.some((base) => d.startsWith(`${base}.`));
+}
+
 export function domainOf(lead) {
   if (lead.email && lead.email.includes('@')) {
     const domain = lead.email.split('@')[1].toLowerCase();
     // Skip freemail — can't be attributed to an account.
-    if (!/gmail|yahoo|hotmail|outlook|icloud|proton/.test(domain)) return domain;
+    if (!isFreemailDomain(domain)) return domain;
   }
   if (lead.website) {
     return lead.website.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].toLowerCase();

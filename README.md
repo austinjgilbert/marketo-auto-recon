@@ -36,8 +36,10 @@ flowchart LR
 Built to be picked up and run by anyone:
 
 - **Zero npm dependencies.** Node ≥ 18, native `fetch`. `git clone` and run.
-- **Read-only, guaranteed.** The Marketo client can only issue GET requests — there is no code
-  path that writes to Marketo (and a test enforces it).
+- **Read-only, enforced.** The Marketo client is GET-only, and a test fails the suite if any
+  other method is ever issued. The single exception is the OAuth handshake — one POST of the
+  client credentials to Marketo's identity endpoint (auth, not a write). There is no code path
+  that can create, update, or delete anything in Marketo.
 - **Works with no LLM key.** Everything is deterministic; `ANTHROPIC_API_KEY` optionally adds
   Claude-written narrative briefs and mapping suggestions.
 - **Try it with no Marketo at all.** Every command accepts `--mock` and runs against a bundled

@@ -68,17 +68,19 @@ export function auditDataQuality({ leadFields, programs, smartCampaigns, activit
   return issues;
 }
 
-export async function runRecon(client) {
+export async function runRecon(client, { assetMax = 500 } = {}) {
+  const truncated = [];
+  const assetOpts = { max: assetMax, onTruncate: (path) => truncated.push(path) };
   const [activityTypes, leadFields, programs, smartCampaigns, forms, landingPages, emails, campaigns] =
     await Promise.all([
       client.getActivityTypes(),
       client.describeLeadFields(),
-      client.getPrograms().catch(() => []),
-      client.getSmartCampaigns().catch(() => []),
-      client.getForms().catch(() => []),
-      client.getLandingPages().catch(() => []),
-      client.getEmails().catch(() => []),
-      client.getCampaigns().catch(() => []),
+      client.getPrograms(assetOpts).catch(() => []),
+      client.getSmartCampaigns(assetOpts).catch(() => []),
+      client.getForms(assetOpts).catch(() => []),
+      client.getLandingPages(assetOpts).catch(() => []),
+      client.getEmails(assetOpts).catch(() => []),
+      client.getCampaigns({ max: assetMax }).catch(() => []),
     ]);
 
   const fieldsByCategory = {};
@@ -88,6 +90,13 @@ export async function runRecon(client) {
   }
 
   const dataQualityIssues = auditDataQuality({ leadFields, programs, smartCampaigns, activityTypes });
+  for (const path of truncated) {
+    dataQualityIssues.push({
+      kind: 'inventory-truncated',
+      subject: path,
+      detail: `Asset inventory hit the ${assetMax}-item cap — the map is incomplete. Raise MSE_ASSET_MAX and re-run \`mse recon\`.`,
+    });
+  }
 
   return {
     generatedAt: new Date().toISOString(),

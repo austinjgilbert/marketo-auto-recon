@@ -5,21 +5,39 @@
  */
 
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-export const OUTPUT_DIR = join(PKG_ROOT, 'outputs');
+
+/** Parse dotenv text: CRLF-safe, strips quotes, cuts unquoted values at ` #` inline comments. */
+export function parseDotEnv(text) {
+  const out = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!m) continue;
+    const [, key, raw] = m;
+    let value = raw;
+    const quoted = /^(["']).*\1$/.test(value);
+    if (quoted) {
+      value = value.slice(1, -1);
+    } else {
+      // Unquoted values end at an inline comment: KEY=value  # note
+      const hash = value.search(/\s#/);
+      if (hash !== -1) value = value.slice(0, hash).trim();
+      if (value.startsWith('#')) value = '';
+    }
+    out[key] = value;
+  }
+  return out;
+}
 
 function loadDotEnv() {
   const envPath = join(PKG_ROOT, '.env');
   if (!existsSync(envPath)) return;
-  for (const line of readFileSync(envPath, 'utf8').split('\n')) {
-    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (!m) continue;
-    const [, key, raw] = m;
-    if (process.env[key] !== undefined) continue;
-    process.env[key] = raw.replace(/^["']|["']$/g, '');
+  const parsed = parseDotEnv(readFileSync(envPath, 'utf8'));
+  for (const [key, value] of Object.entries(parsed)) {
+    if (process.env[key] === undefined) process.env[key] = value;
   }
 }
 
@@ -31,6 +49,11 @@ export function parseInterval(text, fallbackMs) {
   const n = Number(m[1]);
   const unit = (m[2] || 's').toLowerCase();
   return n * (unit === 'h' ? 3_600_000 : unit === 'm' ? 60_000 : 1000);
+}
+
+/** Output dir: MSE_OUTPUT_DIR (global installs, read-only deploys) or <pkg>/outputs. */
+export function getOutputDir() {
+  return process.env.MSE_OUTPUT_DIR ? resolve(process.env.MSE_OUTPUT_DIR) : join(PKG_ROOT, 'outputs');
 }
 
 export function loadConfig(cliFlags = {}) {
@@ -46,6 +69,7 @@ export function loadConfig(cliFlags = {}) {
     anthropic: {
       apiKey: process.env.ANTHROPIC_API_KEY || '',
       model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
+      redact: process.env.MSE_LLM_REDACT === '1',
     },
     sinks: {
       wranglerUrl: (process.env.WRANGLER_URL || '').replace(/\/+$/, ''),
@@ -54,14 +78,20 @@ export function loadConfig(cliFlags = {}) {
       webhookSecret: process.env.SINK_WEBHOOK_SECRET || '',
     },
     lookbackDays: Number(process.env.MSE_LOOKBACK_DAYS || 90),
+    initialLookbackDays: Number(process.env.MSE_INITIAL_LOOKBACK_DAYS || 7),
     harvestIntervalMs: parseInterval(process.env.MSE_HARVEST_INTERVAL, 15 * 60_000),
-    outputDir: OUTPUT_DIR,
+    httpTimeoutMs: Number(process.env.MSE_HTTP_TIMEOUT || 30_000),
+    assetMax: Number(process.env.MSE_ASSET_MAX || 500),
+    dailyApiBudget: Number(process.env.MSE_DAILY_API_BUDGET || 10_000),
+    emittedKeysCap: Number(process.env.MSE_EMITTED_KEYS_CAP || 50_000),
+    outputDir: getOutputDir(),
   };
 }
 
 export function ensureOutputDir() {
-  mkdirSync(join(OUTPUT_DIR, 'snapshots'), { recursive: true });
-  return OUTPUT_DIR;
+  const dir = getOutputDir();
+  mkdirSync(join(dir, 'snapshots'), { recursive: true });
+  return dir;
 }
 
 /** Fail fast with a friendly message when live creds are missing. */

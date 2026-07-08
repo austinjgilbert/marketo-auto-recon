@@ -91,6 +91,7 @@ The tool is deliberately a set of small composable modules (see the code map in
 | **New snapshot section or a different brief format** (exec summary, QBR pack) | `src/snapshot.js` — sections are independent builders over the interpreted journey |
 | **Account-level daemon** (watch a named account list instead of the whole instance) | `src/harvester.js` — filter at the lead-resolution step |
 | **Another marketing platform** (HubSpot, Pardot, Eloqua) | Keep everything from `src/normalizer.js` down; replace `src/marketo-client.js` + `src/recon.js` with the new API. The canonical event schema is the interface. |
+| **Marketo Bulk Extract for backfills** | For very large instances, the REST activity API is the wrong tool for initial history loads — Marketo's Bulk Extract API (async CSV jobs, separate 500MB/day quota) would let the first pull cover months cheaply. The harvester's event cache is the natural insertion point: bulk-load it once, then let incremental polling maintain it. |
 | **A UI** over instance maps and snapshots | Everything is already JSON in `outputs/` — render it |
 
 Rules for extending without breaking the concept:

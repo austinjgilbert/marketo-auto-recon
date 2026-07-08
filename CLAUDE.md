@@ -57,8 +57,8 @@ the end state before doing Marketo admin work.
 | File | Owns |
 |---|---|
 | `bin/mse.js` | CLI dispatch, flags, output writing |
-| `src/config.js` | `.env` loading, defaults, interval parsing |
-| `src/marketo-client.js` | OAuth, rate limit (90/20s), retries, paging, GET-only surface |
+| `src/config.js` | `.env` loading (CRLF/inline-comment safe), defaults, `MSE_OUTPUT_DIR`, interval parsing |
+| `src/marketo-client.js` | OAuth (POST body), rate limit (90/20s), retries + timeouts, paging guards, lead/type chunking, GET-only REST surface |
 | `src/mock-transport.js` + `fixtures/instance.js` | Synthetic instance for `--mock` and tests |
 | `src/recon.js` | Inventory + field categorization + DQ audit + markdown render |
 | `src/signal-map.js` | Heuristic classifiers, canonical taxonomy, coverage stats |
@@ -67,8 +67,8 @@ the end state before doing Marketo admin work.
 | `src/interpreter.js` | Journey stage, stalls, velocity, event + pattern signals, dedupe keys |
 | `src/snapshot.js` | The 9-section deterministic seller brief |
 | `src/pipeline.js` | Lead/account resolution + full pipeline orchestration |
-| `src/harvester.js` | Incremental polling, state persistence, dedupe, sink fan-out, daemon |
-| `src/sinks/` | `jsonl.js`, `webhook.js` (HMAC), `wrangler.js` (ingest-batch adapter) |
+| `src/harvester.js` | Incremental polling (per-chunk tokens), event cache, API budget guard, state lock, dedupe, sink fan-out, daemon |
+| `src/sinks/` | `jsonl.js`, `webhook.js` (timestamped HMAC), `wrangler.js` (ingest-batch adapter) |
 
 ## Wrangler integration (when running inside the Wrangler repo)
 
