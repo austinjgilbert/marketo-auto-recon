@@ -1,0 +1,25 @@
+{
+  "name": "marketo-auto-recon",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Marketo Auto Recon — point it at any Marketo instance and it inspects, inventories, maps the useful data, normalizes buyer journeys, produces 20-second seller snapshots, and continuously harvests state-change signals for action. Read-only. Zero dependencies.",
+  "type": "module",
+  "bin": {
+    "mse": "./bin/mse.js"
+  },
+  "scripts": {
+    "start": "node bin/mse.js",
+    "auth": "node bin/mse.js auth",
+    "recon": "node bin/mse.js recon",
+    "map": "node bin/mse.js map",
+    "snapshot": "node bin/mse.js snapshot",
+    "harvest": "node bin/mse.js harvest",
+    "explain": "node bin/mse.js explain",
+    "demo": "MSE_MOCK=1 node bin/mse.js recon && MSE_MOCK=1 node bin/mse.js map && MSE_MOCK=1 node bin/mse.js snapshot --email jane.doe@acme.com && MSE_MOCK=1 node bin/mse.js harvest --once && MSE_MOCK=1 node bin/mse.js explain",
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
