@@ -32,9 +32,10 @@ nothing leaves your machine except the Marketo API calls themselves.
 
 **What about PII?**
 The tool processes lead emails and activity history — treat `outputs/` with the same care as a
-CRM export. Nothing is stored anywhere you didn't point a sink at. You can relocate all local
-artifacts (maps, snapshots, signals, state) with `MSE_OUTPUT_DIR` to satisfy data-retention
-policies.
+CRM export. Nothing is stored anywhere you didn't point a sink at. The directory is created
+owner-only (`0700`), you can relocate all local artifacts (maps, snapshots, signals, state)
+with `MSE_OUTPUT_DIR`, and `mse purge --older-than 90` enforces a retention window (drops old
+signals, dead-letter rows, and snapshots — see the RUNBOOK's data-retention section).
 
 **Does the LLM option send lead data to Anthropic?**
 Yes — the narrative-snapshot path ships journey data (names, emails, activity history) to
@@ -44,6 +45,13 @@ names and company domains are kept so the brief still reads). Note the redaction
 free-text form comments (whatever a lead typed into a "Comments" box) and company names are
 NOT redacted — if those matter to your privacy posture, leave the LLM path off. The
 deterministic pipeline never needs the key at all.
+
+Also be aware the narrative layer consumes **untrusted input**: form comments are typed by
+whoever filled your public forms. Mitigations are in place — free-text fields are truncated
+to 200 characters before anything reaches the prompt, and the model is instructed to treat
+lead-submitted text as data, never as directives — but as with any LLM summarizing
+user-supplied text, a rep should treat the narrative brief as a draft, not gospel. The
+deterministic brief quotes the same text with the same cap and no model in the loop.
 
 ## Running it
 

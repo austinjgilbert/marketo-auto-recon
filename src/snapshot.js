@@ -55,7 +55,9 @@ export function buildSnapshot({ focusJourney, accountJourney, interpretation, no
   const { stage, stalls, velocity } = interpretation;
 
   const contactForm = [...events].reverse().find((e) => e.canonicalType === 'form_fill' && ['contact_us', 'demo_request'].includes(e.formIntent));
-  const comments = contactForm?.attrs?.Comments || null;
+  // Lead-typed free text is untrusted input (anyone can submit a public form) —
+  // cap what we quote so it can't dominate the brief or the LLM prompt built on it.
+  const comments = contactForm?.attrs?.Comments ? String(contactForm.attrs.Comments).slice(0, 200) : null;
   const pricingVisits = events.filter((e) => e.urlCategory === 'pricing');
   const competitorViews = events.filter((e) => e.urlCategory === 'competitor');
   const topTopics = focusJourney.topics.map((t) => t.topic);

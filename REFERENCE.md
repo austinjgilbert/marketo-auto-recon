@@ -11,7 +11,8 @@ Companion to the [README](README.md). Everything here is produced by the `mse` C
 | Test | `mse test --email x@y.com` | Stage-by-stage dump for one lead: resolution → normalized journey → interpretation → snapshot. Proves the map before you scale. |
 | Snapshot | `mse snapshot --email x@y.com` | 9-section seller brief (markdown + JSON): who / what they care about / why you should want this / doubts / what to say / channel + timing / next step / follow-up plan / who else is involved. Deterministic in <5s; Claude narrative pass when `ANTHROPIC_API_KEY` is set. |
 | Harvest | `mse harvest [--once\|--daemon]` | Canonical signals to sinks. Incremental (per-chunk Marketo paging tokens persisted in `outputs/.state.json`), deduped across runs and restarts, protected by a `.state.lock` against concurrent harvesters, budget-guarded (`MSE_DAILY_API_BUDGET`), with a rolling per-account event cache so account history is pulled once, not every poll. Once a day it re-inventories activity types + forms (drift detection): new items are logged loudly, hot-mapped when the heuristics are confident (≥ 0.75), and surfaced in `mse explain` — the hand-edited `signal-map.json` is never rewritten automatically. |
-| Explain | `mse explain` | Human report: inventory, mapping coverage %, confidence, DQ issues, harvest state, recommended engineering + GTM next actions. |
+| Explain | `mse explain` | Human report: inventory, mapping coverage %, confidence, DQ issues, harvest state, drift, recommended engineering + GTM next actions. |
+| Purge | `mse purge [--older-than 90]` | Data retention: drops signals, dead-letter rows, and snapshot files older than the cutoff. `outputs/` holds PII — see the RUNBOOK's retention section. |
 
 ## The journey blob (normalized schema)
 

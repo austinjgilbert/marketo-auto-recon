@@ -12,13 +12,14 @@
  *   mse harvest --daemon [--interval 15m]
  *   mse harvest --replay-failed      re-send signals whose sink delivery failed
  *   mse explain                      what the engine found + recommended next actions
+ *   mse purge [--older-than 90]      delete PII-bearing artifacts older than N days
  *
  * Global flags: --mock (or MSE_MOCK=1) runs against the bundled fixture instance.
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadConfig, ensureOutputDir, requireMarketoCreds, parseInterval } from '../src/config.js';
+import { loadConfig, ensureOutputDir, requireMarketoCreds, parseInterval, assertSecureSinkUrl } from '../src/config.js';
 import { MarketoClient } from '../src/marketo-client.js';
 import { createMockTransport } from '../src/mock-transport.js';
 import { runRecon, renderInstanceMapMarkdown } from '../src/recon.js';
@@ -29,6 +30,7 @@ import { createJsonlSink } from '../src/sinks/jsonl.js';
 import { createWebhookSink } from '../src/sinks/webhook.js';
 import { createWranglerSink } from '../src/sinks/wrangler.js';
 import { makeLlmMappingAssist, generateNarrativeSnapshot, llmAvailable } from '../src/llm.js';
+import { purgeOutputs, DEFAULT_PURGE_DAYS } from '../src/purge.js';
 import { MOCK_NOW } from '../fixtures/instance.js';
 
 function parseArgs(argv) {
@@ -83,9 +85,11 @@ function loadJson(path, friendlyName) {
 function buildSinks(config) {
   const sinks = [createJsonlSink(config.outputDir)];
   if (config.sinks.webhookUrl) {
+    assertSecureSinkUrl(config.sinks.webhookUrl, 'SINK_WEBHOOK_URL');
     sinks.push(createWebhookSink({ url: config.sinks.webhookUrl, secret: config.sinks.webhookSecret }));
   }
   if (config.sinks.wranglerUrl && config.sinks.wranglerApiKey) {
+    assertSecureSinkUrl(config.sinks.wranglerUrl, 'WRANGLER_URL');
     sinks.push(createWranglerSink({ url: config.sinks.wranglerUrl, apiKey: config.sinks.wranglerApiKey }));
   }
   return sinks;
@@ -319,6 +323,21 @@ async function cmdExplain(config) {
   for (const r of recs) console.log(`- ${r}`);
 }
 
+async function cmdPurge(config, flags) {
+  const outputDir = ensureOutputDir();
+  const olderThanDays = Number(flags['older-than'] || DEFAULT_PURGE_DAYS);
+  if (!Number.isFinite(olderThanDays) || olderThanDays <= 0) {
+    console.error('--older-than must be a positive number of days.');
+    process.exit(1);
+  }
+  const report = purgeOutputs(outputDir, { olderThanDays, now: nowFor(config) });
+  console.log(`Purged artifacts older than ${olderThanDays} day(s) (before ${report.cutoffIso}):`);
+  console.log(`  signals.jsonl:        dropped ${report.signals.dropped}, kept ${report.signals.kept}`);
+  console.log(`  signals-failed.jsonl: dropped ${report.deadLetter.dropped}, kept ${report.deadLetter.kept}`);
+  console.log(`  snapshots/:           deleted ${report.snapshots.dropped}, kept ${report.snapshots.kept}`);
+  console.log(`  state event cache:    ${report.eventCacheDomains} domain(s) (self-bounding — pruned by the harvester, not purge)`);
+}
+
 /* ── main ── */
 
 const { command, flags } = parseArgs(process.argv.slice(2));
@@ -332,16 +351,17 @@ const commands = {
   snapshot: () => cmdTestOrSnapshot(config, flags, { verbose: false }),
   harvest: () => cmdHarvest(config, flags),
   explain: () => cmdExplain(config),
+  purge: () => cmdPurge(config, flags),
 };
 
 if (!command || !commands[command]) {
-  console.error('Usage: mse <auth|recon|map|test|snapshot|harvest|explain> [flags]\n');
+  console.error('Usage: mse <auth|recon|map|test|snapshot|harvest|explain|purge> [flags]\n');
   console.error('Autopilot order: auth -> recon -> map -> test -> snapshot -> harvest -> explain');
   console.error('Demo without credentials: add --mock (or MSE_MOCK=1) to any command.');
   process.exit(command ? 1 : 0);
 }
 
-if (command !== 'explain') requireMarketoCreds(config);
+if (!['explain', 'purge'].includes(command)) requireMarketoCreds(config);
 
 commands[command]().catch((err) => {
   console.error(`${command} failed: ${err.message}`);

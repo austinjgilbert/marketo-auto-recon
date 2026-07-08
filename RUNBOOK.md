@@ -126,6 +126,23 @@ Notes:
 - Wrangler-side: rows whose domain matches no `account` document are **skipped by design**
   (named-accounts-only). `skipped > 0` in the sink result is normal.
 
+### Data retention (read this before production)
+
+`outputs/` holds PII in plaintext — lead emails, names, and free-text form comments live in
+`signals.jsonl`, `signals-failed.jsonl`, the snapshot files, and the state event cache. The
+directory is created owner-only (`0700`), but nothing deletes old artifacts on its own, so a
+lead deleted in Marketo persists locally until you purge — which matters for GDPR-style
+deletion requests. Set a retention window and enforce it on a schedule:
+
+```bash
+node bin/mse.js purge --older-than 90     # drop signals, dead-letter rows, and snapshots >90 days old
+```
+
+Add it to the same cron as the harvest (daily is plenty). The state event cache is
+self-bounding — the harvester prunes it to the journey window and evicts inactive accounts —
+so purge reports its size but doesn't touch it. For a hard reset of one lead or account,
+delete `outputs/.state.json` and the relevant snapshot files, then re-baseline.
+
 ## Phase 6 — Acceptance checklist (the "done" gate)
 
 - [ ] `mse auth` succeeds with the read-only API user.

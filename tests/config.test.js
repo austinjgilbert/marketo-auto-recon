@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { parseDotEnv, parseInterval, getOutputDir, PKG_ROOT } from '../src/config.js';
+import { parseDotEnv, parseInterval, getOutputDir, assertSecureSinkUrl, PKG_ROOT } from '../src/config.js';
 
 test('parseDotEnv handles CRLF line endings (Windows-edited .env)', () => {
   const parsed = parseDotEnv('MARKETO_BASE_URL=https://abc.mktorest.com\r\nMARKETO_CLIENT_ID=id-123\r\n');
@@ -47,4 +47,13 @@ test('getOutputDir honors MSE_OUTPUT_DIR and defaults to <pkg>/outputs', () => {
     if (prior === undefined) delete process.env.MSE_OUTPUT_DIR;
     else process.env.MSE_OUTPUT_DIR = prior;
   }
+});
+
+test('assertSecureSinkUrl: https ok, plain http refused, localhost exempt', () => {
+  assert.doesNotThrow(() => assertSecureSinkUrl('https://hooks.example.com/mse', 'SINK_WEBHOOK_URL'));
+  assert.doesNotThrow(() => assertSecureSinkUrl('http://localhost:8787/ingest', 'SINK_WEBHOOK_URL'));
+  assert.doesNotThrow(() => assertSecureSinkUrl('http://127.0.0.1:3000/x', 'WRANGLER_URL'));
+  assert.throws(() => assertSecureSinkUrl('http://hooks.example.com/mse', 'SINK_WEBHOOK_URL'), /must use https/);
+  assert.throws(() => assertSecureSinkUrl('ftp://example.com/x', 'SINK_WEBHOOK_URL'), /must use https/);
+  assert.throws(() => assertSecureSinkUrl('not a url', 'SINK_WEBHOOK_URL'), /not a valid URL/);
 });

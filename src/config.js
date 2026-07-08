@@ -93,8 +93,31 @@ export function loadConfig(cliFlags = {}) {
 
 export function ensureOutputDir() {
   const dir = getOutputDir();
-  mkdirSync(join(dir, 'snapshots'), { recursive: true });
+  // outputs/ holds PII (emails, names, form comments) — owner-only by default.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  mkdirSync(join(dir, 'snapshots'), { recursive: true, mode: 0o700 });
   return dir;
+}
+
+/**
+ * Sinks carry PII (and, for the webhook, the HMAC signature) — plain HTTP would
+ * send all of it in cleartext. Refuse non-HTTPS sink URLs, with a localhost
+ * exemption for local development receivers.
+ */
+export function assertSecureSinkUrl(url, name) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`${name} is not a valid URL: ${url}`);
+  }
+  if (parsed.protocol === 'https:') return;
+  const isLocalhost = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(parsed.hostname);
+  if (parsed.protocol === 'http:' && isLocalhost) return;
+  throw new Error(
+    `${name} must use https:// — signals contain PII and would travel in cleartext over ${parsed.protocol}//. ` +
+      `(http:// is allowed for localhost only.)`,
+  );
 }
 
 /** Fail fast with a friendly message when live creds are missing. */
