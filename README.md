@@ -62,6 +62,30 @@ demo. Start with [the seller snapshot](examples/snapshots/jane.doe%40acme.com.md
 submitted "Contact Sales" after months of pricing visits and competitor research, and this is
 what her rep sees 20 seconds later.
 
+## Install
+
+Via npm (recommended):
+
+```sh
+npm install -g marketo-auto-recon
+mse --help
+```
+
+Via npx (no install):
+
+```sh
+npx marketo-auto-recon --help
+```
+
+From source:
+
+```sh
+git clone https://github.com/austinjgilbert/marketo-auto-recon.git
+cd marketo-auto-recon && npm test
+```
+
+> **Note:** The CLI binary is named `mse` (short for Marketo Sales Engine). After `npm install -g`, run `mse <command>`. `npx marketo-auto-recon` will invoke `mse` automatically via the package `bin` field.
+
 ## Run it on a real instance
 
 ```bash
