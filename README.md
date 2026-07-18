@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Node >= 18](https://img.shields.io/badge/node-%E2%89%A5%2018-brightgreen)
 ![Dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)
+![Coverage: 94%](https://img.shields.io/badge/coverage-94%25-brightgreen)
 
 **Point it at any Marketo instance — even one nobody understands — and in an afternoon you get
 a full map of what's in there, chronological buyer journeys, seller-ready briefs, and a live
