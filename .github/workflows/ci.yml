@@ -25,6 +25,14 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Unit tests (node:test, zero dependencies)
         run: npm test
+      - name: Coverage (node --experimental-test-coverage, zero new deps)
+        continue-on-error: true
+        run: |
+          node --experimental-test-coverage --test tests/*.test.js 2>&1 | tee /tmp/coverage.txt
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -A 999 'start of coverage report' /tmp/coverage.txt | grep -B 999 'end of coverage report' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
       - name: End-to-end autopilot in mock mode
         run: npm run demo
       - name: Harvest dedupe invariant (second pass emits zero)
