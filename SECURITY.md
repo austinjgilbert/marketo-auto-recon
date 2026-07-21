@@ -24,8 +24,7 @@ Credentials (Marketo client ID/secret, Claude API key, webhook URL) are stored i
 If you discover a security vulnerability in this project, please **do not open a public
 GitHub issue**. Instead, report it privately:
 
-**Email:** `austin.gilbert@AGILBERT.local`
-<!-- TODO(Austin): replace with your real security disclosure address before v1.0.0 tag -->
+**Email:** `austinjgilbert@gmail.com`
 
 Please include:
 - A description of the vulnerability and its potential impact
